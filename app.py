@@ -305,9 +305,8 @@ async def connect():
     claude = find_claude()
     if not claude:
         return {"ok": False, "error": "Claude engine not found."}
-    subprocess.Popen(["cmd", "/c", "start", "PrintLab — one-time login",
-                      "cmd", "/k", f'echo Type /login and press Enter, follow the browser, then close this window. && "{claude}"'],
-                     creationflags=subprocess.CREATE_NO_WINDOW)
+    subprocess.Popen([str(ROOT / "tools" / "engine_login.bat"), claude],
+                     cwd=ROOT, creationflags=subprocess.CREATE_NEW_CONSOLE)
     return {"ok": True}
 
 
