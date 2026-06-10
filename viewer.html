@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PrintLab Viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #14171c; overflow: hidden;
+               font-family: "Segoe UI", system-ui, sans-serif; }
+  #bar { position: fixed; top: 0; left: 0; right: 0; padding: 10px 16px;
+         color: #cfd8e3; font-size: 14px; display: flex; gap: 18px;
+         align-items: baseline; pointer-events: none; }
+  #bar b { color: #fff; font-size: 15px; }
+  #hint { position: fixed; inset: 0; display: flex; align-items: center;
+          justify-content: center; color: #5b6b7d; font-size: 20px;
+          pointer-events: none; }
+  #hint span { border: 2px dashed #2c3644;
+               border-radius: 14px; padding: 28px 44px; }
+  body.drag #hint span { border-color: #4f8edc; color: #9fc1ec; }
+  #pick { position: fixed; bottom: 14px; left: 16px; color: #8fa3ba;
+          background: #1d232c; border: 1px solid #2c3644; border-radius: 8px;
+          padding: 8px 14px; font-size: 13px; cursor: pointer; }
+  #pick:hover { background: #232b36; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="hint"><span>Drop an STL here&nbsp; (or click Choose file)</span></div>
+<button id="pick">Choose file…</button>
+<input id="file" type="file" accept=".stl">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14171c);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 5000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xe8f0ff, 0x303840, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(120, 200, 160);
+scene.add(sun);
+
+// Bambu P1S plate reference: 256 x 256 mm, 10 mm grid
+const grid = new THREE.GridHelper(260, 26, 0x3a4656, 0x232b36);
+scene.add(grid);
+const plate = new THREE.LineLoop(
+  new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-128, 0, -128), new THREE.Vector3(128, 0, -128),
+    new THREE.Vector3(128, 0, 128), new THREE.Vector3(-128, 0, 128)]),
+  new THREE.LineBasicMaterial({ color: 0x4f8edc }));
+scene.add(plate);
+
+const material = new THREE.MeshStandardMaterial({
+  color: 0x7fa7d8, metalness: 0.05, roughness: 0.55 });
+let mesh = null;
+const loader = new STLLoader();
+
+function show(buffer, name) {
+  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
+  const geo = loader.parse(buffer);
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox, size = new THREE.Vector3();
+  bb.getSize(size); // STL is Z-up: size.x, size.y, size.z are real mm dims
+  geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
+  geo.computeVertexNormals();
+  mesh = new THREE.Mesh(geo, material);
+  mesh.rotation.x = -Math.PI / 2; // Z-up file -> Y-up scene
+  scene.add(mesh);
+
+  const tris = (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
+  document.getElementById("bar").innerHTML =
+    `<b>${name}</b><span>${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ` +
+    `${size.z.toFixed(1)} mm</span><span>${tris.toLocaleString()} triangles</span>`;
+  document.getElementById("hint").style.display = "none";
+
+  const span = Math.max(size.x, size.y, size.z);
+  camera.position.set(span * 1.2, span * 0.9, span * 1.5);
+  controls.target.set(0, size.z / 2, 0);
+  controls.update();
+}
+
+function openFile(file) {
+  const r = new FileReader();
+  r.onload = () => show(r.result, file.name);
+  r.readAsArrayBuffer(file);
+}
+
+addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("drag"); });
+addEventListener("dragleave", () => document.body.classList.remove("drag"));
+addEventListener("drop", e => {
+  e.preventDefault(); document.body.classList.remove("drag");
+  if (e.dataTransfer.files[0]) openFile(e.dataTransfer.files[0]);
+});
+document.getElementById("pick").onclick = () => document.getElementById("file").click();
+document.getElementById("file").onchange = e => { if (e.target.files[0]) openFile(e.target.files[0]); };
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+</script>
+</body>
+</html>
