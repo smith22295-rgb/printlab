@@ -205,6 +205,12 @@ def safe_part(name):
     return name
 
 
+def retarget_export(src, old, new):
+    """Point a part script's lib3d.export() call at a new stem."""
+    return re.subn(rf'(lib3d\.export\([^"\']*["\']){re.escape(old)}(["\'])',
+                   rf"\g<1>{new}\g<2>", src)
+
+
 def run_part(part, overrides=None):
     env = clean_env()
     if overrides:
@@ -278,6 +284,64 @@ async def bake(body: dict):
     path.write_text(src[:match.start(2)] + block + src[match.end(2):], encoding="utf-8")
     ok, out = run_part(part)
     return {"ok": ok, "log": out[-600:]}
+
+
+@app.post("/api/delete")
+async def delete_part(body: dict):
+    part = safe_part(body.get("part"))
+    if not part:
+        return JSONResponse({"error": "unknown part"}, status_code=404)
+    trash = ROOT / "trash"
+    trash.mkdir(exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    (PARTS / f"{part}.py").rename(trash / f"{part}.{stamp}.py")
+    stl = OUT / f"{part}.stl"
+    if stl.exists():
+        stl.rename(trash / f"{part}.{stamp}.stl")
+    return {"ok": True}
+
+
+def _valid_new_name(name):
+    return bool(re.fullmatch(r"[a-z][a-z0-9_]{1,40}", name or "")) \
+        and not (PARTS / f"{name}.py").exists()
+
+
+@app.post("/api/rename")
+async def rename_part(body: dict):
+    part = safe_part(body.get("part"))
+    if not part:
+        return JSONResponse({"error": "unknown part"}, status_code=404)
+    to = (body.get("to") or "").strip()
+    if not _valid_new_name(to):
+        return {"ok": False, "error": "name must be unused snake_case (a-z, 0-9, _)"}
+    path = PARTS / f"{part}.py"
+    src, hits = retarget_export(path.read_text(encoding="utf-8"), part, to)
+    if not hits:
+        return {"ok": False, "error": "couldn't update the script's export name"}
+    (PARTS / f"{to}.py").write_text(src, encoding="utf-8")
+    path.unlink()
+    stl = OUT / f"{part}.stl"
+    if stl.exists():
+        stl.rename(OUT / f"{to}.stl")
+    return {"ok": True, "part": to}
+
+
+@app.post("/api/duplicate")
+async def duplicate_part(body: dict):
+    part = safe_part(body.get("part"))
+    if not part:
+        return JSONResponse({"error": "unknown part"}, status_code=404)
+    n = 2
+    while not _valid_new_name(f"{part}_{n}"):
+        n += 1
+    to = f"{part}_{n}"
+    src, hits = retarget_export((PARTS / f"{part}.py").read_text(encoding="utf-8"),
+                                part, to)
+    if not hits:
+        return {"ok": False, "error": "couldn't update the script's export name"}
+    (PARTS / f"{to}.py").write_text(src, encoding="utf-8")
+    run_part(to)
+    return {"ok": True, "part": to}
 
 
 @app.post("/api/generate")

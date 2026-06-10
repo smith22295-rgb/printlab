@@ -58,12 +58,17 @@
   #auth ol { margin: 8px 0 10px 18px; padding: 0; color: var(--dim); }
 
   .part { padding: 9px 12px; border: 1px solid transparent; border-radius: 8px;
-          cursor: pointer; display: flex; justify-content: space-between;
-          align-items: baseline; gap: 8px; }
+          cursor: pointer; display: flex; align-items: baseline; gap: 8px; }
   .part:hover { background: var(--panel2); }
   .part.sel { background: var(--panel2); border-color: var(--amber2); }
-  .part .nm { font-size: 14px; }
+  .part .nm { font-size: 14px; flex: 1; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; }
   .part .dm { font: 11px Consolas, monospace; color: var(--dim); white-space: nowrap; }
+  .part .acts { display: none; gap: 1px; }
+  .part:hover .acts, .part.sel .acts { display: inline-flex; }
+  .acts button { background: transparent; color: var(--dim); border: none;
+                 padding: 0 4px; font-size: 13px; cursor: pointer; }
+  .acts button:hover { color: var(--amber); }
 
   #params { display: none; }
   .pgrid { display: grid; grid-template-columns: 1fr 92px; gap: 6px 10px;
@@ -250,11 +255,54 @@ async function refreshLibrary(selectName) {
     const div = document.createElement("div");
     div.className = "part" + (p.name === selected ? " sel" : "");
     div.innerHTML = `<span class="nm">${p.name}</span>` +
-      `<span class="dm">${p.dims ? p.dims.join("×") + " mm" : "no stl"}</span>`;
-    div.onclick = () => selectPart(p.name);
+      `<span class="dm">${p.dims ? p.dims.join("×") + " mm" : "no stl"}</span>` +
+      `<span class="acts">` +
+      `<button data-act="rename" title="rename">✎</button>` +
+      `<button data-act="duplicate" title="duplicate">⧉</button>` +
+      `<button data-act="delete" title="delete">🗑</button></span>`;
+    div.onclick = e => {
+      const act = e.target.dataset?.act;
+      if (act) { e.stopPropagation(); manage(act, p.name); }
+      else selectPart(p.name);
+    };
     lib.appendChild(div);
   }
   if (selectName) selectPart(selectName);
+}
+
+function clearSelection() {
+  selected = null;
+  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh = null; }
+  $("empty").style.display = "flex";
+  $("actions").style.display = "none";
+  $("params").style.display = "none";
+  $("modwrap").style.display = "none";
+  $("modify").checked = false;
+  $("bar").innerHTML = "";
+}
+
+async function manage(act, name) {
+  if (act === "delete") {
+    if (!confirm(`Delete “${name}”? It moves to the trash folder, not gone forever.`)) return;
+    await api("delete", { part: name });
+    if (selected === name) clearSelection();
+    await refreshLibrary();
+    toast(`${name} moved to trash`);
+  } else if (act === "rename") {
+    const to = prompt(`Rename “${name}” to (lowercase letters, numbers, _):`, name);
+    if (!to || to === name) return;
+    const res = await api("rename", { part: name, to: to.trim() });
+    if (!res.ok) { toast(res.error || "rename failed"); return; }
+    if (selected === name) selected = res.part;
+    await refreshLibrary(res.part);
+  } else if (act === "duplicate") {
+    setBusy(true, "duplicating…");
+    const res = await api("duplicate", { part: name });
+    setBusy(false);
+    if (!res.ok) { toast(res.error || "duplicate failed"); return; }
+    await refreshLibrary(res.part);
+    toast(`made ${res.part}`);
+  }
 }
 
 async function selectPart(name) {

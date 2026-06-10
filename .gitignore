@@ -1,4 +1,5 @@
 venv/
 output/
+trash/
 __pycache__/
 *.pyc
