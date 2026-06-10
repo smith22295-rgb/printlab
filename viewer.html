@@ -54,7 +54,7 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(120, 200, 160);
 scene.add(sun);
 
-// Bambu P1S plate reference: 256 x 256 mm, 10 mm grid
+// Bambu X2D plate reference: 256 x 256 mm, 10 mm grid
 const grid = new THREE.GridHelper(260, 26, 0x3a4656, 0x232b36);
 scene.add(grid);
 const plate = new THREE.LineLoop(

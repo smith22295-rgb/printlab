@@ -16,7 +16,9 @@ from shapely.ops import unary_union
 OUT = Path(__file__).parent / "output"
 OUT.mkdir(exist_ok=True)
 
-PLATE = 256.0  # Bambu P1S build plate, mm (X and Y); max Z is 256 too
+# Bambu X2D, main-nozzle volume (X, Y, Z mm). Dual/aux-nozzle prints
+# only get 235.5 in X — keep X under 235 if a part is meant for two colors.
+PLATE = (256.0, 256.0, 260.0)
 
 
 def params(defaults):
@@ -168,7 +170,7 @@ def export(mesh, name):
     path = OUT / f"{name}.stl"
     mesh.export(path)
 
-    fit = "OK" if (dims[0] <= PLATE and dims[1] <= PLATE and dims[2] <= PLATE) else "TOO BIG"
+    fit = "OK" if all(d <= p for d, p in zip(dims, PLATE)) else "TOO BIG"
     print(f"[{name}] watertight={mesh.is_watertight}  "
           f"dims={dims[0]:.1f} x {dims[1]:.1f} x {dims[2]:.1f} mm  "
           f"volume={mesh.volume / 1000:.1f} cm3  tris={len(mesh.faces)}  "

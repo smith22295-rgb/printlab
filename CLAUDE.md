@@ -30,7 +30,9 @@ spend; do NOT re-propose them. Organic AI sculpts are out of scope.
 
 ## Conventions (every part)
 
-- Units: millimeters. Target printer: Bambu P1S, 256 mm cube (`lib3d.PLATE`).
+- Units: millimeters. Target printer: **Bambu X2D** — main-nozzle volume
+  256 × 256 × 260 (`lib3d.PLATE`, per-axis X/Y/Z). Dual-nozzle (two-color)
+  prints only get 235.5 in X — cap X at 235 if a part is meant for two colors.
 - One script per part in `parts/`, params in `P = lib3d.params({...})` at the
   top — every tunable a plain literal with a short comment. The app renders
   these as editable fields, so name keys clearly.
