@@ -93,6 +93,12 @@ Primary uses, in the user's priority order:
   bonded joint). Regardless of pairing, ALWAYS add mechanical interlock:
   through-holes the flex fills, T-slots, or pegs — never rely on adhesion
   alone at a working joint.
+- **Seam rule (user-mandated): NEVER butt two materials along a straight
+  line — a flat seam is a pre-made crack.** Interweave the boundary with
+  `lib3d.seam_tabs(span, height, depth)` — dovetail teeth, union into one
+  body, difference from the other, zero clearance. For tall seams stack two
+  strips at offset phase (move one by half a pitch). Pegs/pockets still
+  apply where a strap enters a body (see hinge_demo).
 
 ## Design judgment
 

@@ -195,6 +195,46 @@ def export(mesh, name):
 DUAL_X = 235.5
 
 
+def seam_tabs(span, height, depth=4.0, tooth=None, flare=None):
+    """Dovetail interlock teeth for a multi-material seam. NEVER butt two
+    materials along a straight line — it's a pre-made crack.
+
+    Builds alternating dovetail teeth on the seam plane X=0, extending into
+    +X by `depth`, running along Y (centered on 0), Z from 0 to `height`.
+    Teeth are wider at the tip than the root, so the joint locks in both
+    pull directions and interweaves along the seam. Zero clearance — the
+    bodies print together and fuse.
+
+    Usage for body A (owns x<0) meeting body B (owns x>0), both built
+    butting at x=0:
+        tabs = seam_tabs(seam_length, part_height)   # orient with move/rotate
+        a = lib3d.union(a, tabs)
+        b = lib3d.difference(b, tabs)
+    """
+    if tooth:
+        n = max(2, int(round(span / (2 * tooth))))
+    else:
+        n = max(2, int(round(span / 12.0)))  # ~6 mm teeth by default
+    pitch = span / n
+    if flare is None:
+        flare = pitch * 0.15
+    flare = min(flare, pitch * 0.2)
+    root, tip = pitch / 2 - flare, pitch / 2 + flare
+
+    clip = Polygon([(-1, -span / 2), (depth + 1, -span / 2),
+                    (depth + 1, span / 2), (-1, span / 2)])
+    teeth = []
+    for k in range(n):
+        yc = -span / 2 + (k + 0.5) * pitch
+        tooth_poly = Polygon([
+            (0, yc - root / 2), (depth, yc - tip / 2),
+            (depth, yc + tip / 2), (0, yc + root / 2),
+        ]).intersection(clip)
+        if tooth_poly.area > 1e-6:
+            teeth.append(tooth_poly)
+    return extrude(unary_union(teeth), height)
+
+
 def export_multi(bodies, name):
     """Two-color/two-material export for the X2D's dual nozzles.
 
@@ -224,11 +264,15 @@ def export_multi(bodies, name):
     for i, a in enumerate(keys):
         for b in keys[i + 1:]:
             try:
-                inter = trimesh.boolean.intersection(
-                    [cleaned[a], cleaned[b]], engine="manifold")
-                if inter.volume > 10:  # mm3 — flush faces are fine, volume isn't
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")  # empty intersection = good
+                    inter = trimesh.boolean.intersection(
+                        [cleaned[a], cleaned[b]], engine="manifold")
+                    vol = inter.volume if len(inter.faces) else 0.0
+                if vol > 10:  # mm3 — flush faces are fine, volume isn't
                     print(f"  !! bodies '{a}' and '{b}' overlap by "
-                          f"{inter.volume / 1000:.2f} cm3 — fix before printing")
+                          f"{vol / 1000:.2f} cm3 — fix before printing")
             except Exception:
                 pass
 
