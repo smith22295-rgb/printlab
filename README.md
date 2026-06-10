@@ -10,6 +10,12 @@ re-run locally for free.
 Double-click **PrintLab** on the Desktop (or `PrintLab.bat` in this folder).
 It starts the local server and opens the app window.
 
+## Setting up on another PC
+
+Clone the repo and double-click `setup.bat` — it builds the Python
+environment, generates the icon, and puts PrintLab on the Desktop.
+Needs Python 3.11+ and the Claude desktop app installed.
+
 ## First run only
 
 The forge engine needs a one-time login (it's Claude Code under the hood,
