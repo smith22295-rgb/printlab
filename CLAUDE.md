@@ -1,32 +1,48 @@
 # PrintLab — Claude contract
 
-Personal "Meshy replacement": the user describes a part in plain English;
-Claude writes a Python script that builds the geometry and exports a
+Personal "Meshy replacement" desktop app: the user describes a part in plain
+English; Claude writes a Python script that builds the geometry and exports a
 print-ready STL. No paid APIs — the user explicitly declined Replicate/Meshy
 spend; do NOT re-propose them. Organic AI sculpts are out of scope.
 
-## Toolchain
+## App architecture
 
-- Python: `venv\Scripts\python.exe` (3.14) — numpy, trimesh, manifold3d,
-  shapely, mapbox-earcut, pillow, matplotlib
-- Run a part: `venv\Scripts\python.exe parts\<name>.py` (from repo root)
-- Preview server: name `printlab` (port 8102) in `C:\Claude\.claude\launch.json`;
-  `viewer.html` is a drag-drop STL viewer (three.js CDN). To verify in preview,
-  fetch the STL and dispatch a synthetic DragEvent drop — screenshots time out
-  in this environment.
+- `app.py` — FastAPI server on 127.0.0.1:8123. Serves `static/index.html`
+  (the whole UI, one file), lists parts, re-runs scripts with the
+  `PRINTLAB_P` env-var override (instant free tweaks), bakes overrides into
+  the script's P block, and forges new parts by spawning **Claude Code
+  headless**: `claude -p <contract prompt> --output-format stream-json
+  --verbose --model opus --allowedTools Read,Glob,Grep,Write,Edit,Bash`.
+- The claude binary is resolved from PATH, falling back to the desktop app's
+  bundled CLI at `%APPDATA%\Claude\claude-code\<version>\claude.exe`.
+  Headless runs need a ONE-TIME interactive `/login` (desktop-app auth is not
+  shared); the UI walks the user through it via the Connect card.
+- Strip all CLAUDE* env vars before spawning (see `clean_env()`), pass
+  `stdin=DEVNULL`, and parse stream-json lines defensively — auth failures
+  arrive as plain-text "Not logged in" lines.
+- Launch: `PrintLab.bat` (Desktop shortcut "PrintLab") starts the server
+  minimized and opens Edge in --app mode. Port already bound = already
+  running, app.py exits 0.
+- Preview entry for verification: name `printlab` (port 8123) in
+  `C:\Claude\.claude\launch.json`. Verify via preview_eval DOM/API checks —
+  screenshots time out in this environment. `viewer.html` is a standalone
+  drag-drop STL viewer (kept for no-server use).
 
 ## Conventions (every part)
 
 - Units: millimeters. Target printer: Bambu P1S, 256 mm cube (`lib3d.PLATE`).
-- One script per part in `parts/`, with a `P = {...}` params dict at the top —
-  user iterates by asking for changes; edit P, re-run.
+- One script per part in `parts/`, params in `P = lib3d.params({...})` at the
+  top — every tunable a plain literal with a short comment. The app renders
+  these as editable fields, so name keys clearly.
+- **Export name must equal the script filename stem**:
+  `lib3d.export(build(), "<stem>")` in `parts/<stem>.py` — the app matches
+  STLs to scripts by stem.
 - Import path boilerplate (parts/ is not a package):
   `sys.path.insert(0, str(Path(__file__).parents[1]))` then `import lib3d`.
 - ALL booleans through `lib3d.union/difference/intersection` (manifold engine,
   watertight by construction). Never `trimesh.boolean` with default engine.
-- Export only via `lib3d.export(mesh, "name")` — it repairs, drops the part
-  onto Z=0, checks plate fit, and prints a stats line. The run is NOT done
-  until the output says `watertight=True`.
+- Run with `venv\Scripts\python.exe parts\<stem>.py`. The run is NOT done
+  until the output says `watertight=True` and `plate_fit=OK`.
 - STLs go to `output/` (gitignored — regenerate, don't commit).
 
 ## lib3d quick reference

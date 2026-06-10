@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PrintLab</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #151b22; --panel2: #1b232d; --line: #263140;
+    --text: #d7dee8; --dim: #8294a8; --amber: #f0a843; --amber2: #c9821f;
+    --good: #5fc88f; --bad: #e06c6c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+               font-family: "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  #wrap { display: flex; height: 100%; }
+
+  /* ---------- sidebar ---------- */
+  #side { width: 360px; min-width: 360px; background: var(--panel);
+          border-right: 1px solid var(--line); display: flex;
+          flex-direction: column; overflow-y: auto; }
+  #brand { display: flex; align-items: center; gap: 10px; padding: 16px 18px 12px; }
+  #brand svg { flex: none; }
+  #brand b { font-size: 19px; letter-spacing: 3px; }
+  #brand small { color: var(--dim); margin-left: auto; font-size: 11px;
+                 display: flex; align-items: center; gap: 6px; }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+  #dot.busy { background: var(--amber); animation: pulse 1s infinite; }
+  #dot.off { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  .section { padding: 12px 18px; border-top: 1px solid var(--line); }
+  .label { font-size: 11px; letter-spacing: 2px; color: var(--dim);
+           text-transform: uppercase; margin-bottom: 8px; }
+
+  textarea { width: 100%; height: 76px; background: var(--panel2); color: var(--text);
+             border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+             font: 14px "Segoe UI", sans-serif; resize: vertical; }
+  textarea:focus { outline: none; border-color: var(--amber2); }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  button { background: var(--amber); color: #1d1407; border: none; border-radius: 8px;
+           padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #ffc063; }
+  button:disabled { background: #4a4234; color: #94876f; cursor: default; }
+  button.ghost { background: transparent; color: var(--dim);
+                 border: 1px solid var(--line); font-weight: 500; }
+  button.ghost:hover { color: var(--text); border-color: var(--dim); }
+  #modwrap { font-size: 12px; color: var(--dim); display: none; align-items: center; gap: 6px; }
+
+  #console { display: none; background: #0c0f13; border: 1px solid var(--line);
+             border-radius: 8px; padding: 10px; margin-top: 10px; max-height: 180px;
+             overflow-y: auto; font: 12px Consolas, monospace; color: #9fb4c8;
+             white-space: pre-wrap; word-break: break-word; }
+  #console .err { color: var(--bad); }
+
+  #auth { display: none; background: #241c10; border: 1px solid var(--amber2);
+          border-radius: 8px; padding: 12px; margin-top: 10px; font-size: 13px; }
+  #auth b { color: var(--amber); }
+  #auth ol { margin: 8px 0 10px 18px; padding: 0; color: var(--dim); }
+
+  .part { padding: 9px 12px; border: 1px solid transparent; border-radius: 8px;
+          cursor: pointer; display: flex; justify-content: space-between;
+          align-items: baseline; gap: 8px; }
+  .part:hover { background: var(--panel2); }
+  .part.sel { background: var(--panel2); border-color: var(--amber2); }
+  .part .nm { font-size: 14px; }
+  .part .dm { font: 11px Consolas, monospace; color: var(--dim); white-space: nowrap; }
+
+  #params { display: none; }
+  .pgrid { display: grid; grid-template-columns: 1fr 92px; gap: 6px 10px;
+           align-items: center; }
+  .pgrid label { font-size: 13px; color: var(--dim); overflow: hidden;
+                 text-overflow: ellipsis; white-space: nowrap; }
+  .pgrid input { width: 100%; background: var(--panel2); color: var(--text);
+                 border: 1px solid var(--line); border-radius: 6px;
+                 padding: 5px 8px; font: 13px Consolas, monospace; }
+  .pgrid input:focus { outline: none; border-color: var(--amber2); }
+  #pstat { font: 12px Consolas, monospace; color: var(--dim); margin-top: 10px;
+           min-height: 16px; }
+  #pstat .ok { color: var(--good); } #pstat .no { color: var(--bad); }
+
+  /* ---------- viewer ---------- */
+  #main { flex: 1; position: relative; }
+  #bar { position: absolute; top: 0; left: 0; right: 0; padding: 12px 18px;
+         display: flex; gap: 18px; align-items: baseline; pointer-events: none;
+         font-size: 14px; color: var(--dim); z-index: 2; }
+  #bar b { color: var(--text); font-size: 16px; }
+  #actions { position: absolute; bottom: 14px; right: 16px; display: flex;
+             gap: 8px; z-index: 2; }
+  #empty { position: absolute; inset: 0; display: flex; align-items: center;
+           justify-content: center; color: #46566a; font-size: 17px; z-index: 1; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+           background: var(--panel2); border: 1px solid var(--amber2);
+           padding: 9px 18px; border-radius: 8px; font-size: 13px; opacity: 0;
+           transition: opacity 0.25s; pointer-events: none; z-index: 9; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="side">
+    <div id="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 2 21 7.2 21 16.8 12 22 3 16.8 3 7.2Z"
+        fill="none" stroke="#f0a843" stroke-width="1.6"/><path d="M12 6.5 16.8 9.3 16.8 14.7 12 17.5 7.2 14.7 7.2 9.3Z"
+        fill="#f0a843" opacity="0.85"/></svg>
+      <b>PRINTLAB</b>
+      <small><span id="dot"></span><span id="dotlbl">ready</span></small>
+    </div>
+
+    <div class="section">
+      <div class="label">Forge a part</div>
+      <textarea id="prompt" placeholder="Describe it in plain English…&#10;e.g. a wall hook for a 19mm closet rod, two screw holes"></textarea>
+      <div class="row">
+        <button id="forge">Forge it</button>
+        <span id="modwrap"><input type="checkbox" id="modify"><label for="modify" id="modlbl">modify selected</label></span>
+      </div>
+      <div id="console"></div>
+      <div id="auth">
+        <b>One-time setup — connect the engine</b>
+        <ol>
+          <li>Click Connect — a terminal opens</li>
+          <li>Type <b>/login</b>, press Enter, finish in the browser</li>
+          <li>Close the terminal and forge again</li>
+        </ol>
+        <button id="connect">Connect</button>
+      </div>
+    </div>
+
+    <div class="section" id="params">
+      <div class="label">Dimensions — <span id="pname"></span></div>
+      <div class="pgrid" id="pgrid"></div>
+      <div class="row">
+        <button id="rerun">Rebuild</button>
+        <button id="bake" class="ghost">Save as defaults</button>
+      </div>
+      <div id="pstat"></div>
+    </div>
+
+    <div class="section">
+      <div class="label">Library</div>
+      <div id="library"></div>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="bar"></div>
+    <div id="empty">Forge your first part, or pick one from the library</div>
+    <div id="actions" style="display:none">
+      <button id="slicer" class="ghost">Open in slicer</button>
+      <button id="folder" class="ghost">Show file</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
+
+const $ = id => document.getElementById(id);
+const api = (path, body) => fetch("/api/" + path, body ? {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body) } : {}).then(r => r.json());
+
+// ------------------------------------------------------------- 3D viewer
+const main = $("main");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1216);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+main.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xe8f0ff, 0x2a3038, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+sun.position.set(120, 200, 160);
+scene.add(sun);
+scene.add(new THREE.GridHelper(260, 26, 0x33404f, 0x1d2530));
+scene.add(new THREE.LineLoop(
+  new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-128, 0, -128), new THREE.Vector3(128, 0, -128),
+    new THREE.Vector3(128, 0, 128), new THREE.Vector3(-128, 0, 128)]),
+  new THREE.LineBasicMaterial({ color: 0xf0a843 })));
+const material = new THREE.MeshStandardMaterial({
+  color: 0x8fb0d8, metalness: 0.05, roughness: 0.55 });
+let mesh = null;
+
+function fit() {
+  const w = main.clientWidth, h = main.clientHeight;
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h); renderer.setPixelRatio(devicePixelRatio);
+}
+new ResizeObserver(fit).observe(main);
+fit();
+(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+
+const loader = new STLLoader();
+async function loadSTL(name, stats, refit = true) {
+  const buf = await fetch(`/output/${name}.stl?t=${stats?.mtime || Date.now()}`)
+    .then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); }).catch(() => null);
+  if (!buf) return;
+  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
+  const geo = loader.parse(buf);
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox, size = new THREE.Vector3();
+  bb.getSize(size);
+  geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
+  geo.computeVertexNormals();
+  mesh = new THREE.Mesh(geo, material);
+  mesh.rotation.x = -Math.PI / 2;
+  scene.add(mesh);
+  $("empty").style.display = "none";
+  $("actions").style.display = "flex";
+  $("bar").innerHTML = `<b>${name}</b><span>${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm</span>` +
+    (stats ? `<span>${(stats.tris || 0).toLocaleString()} tris</span>` +
+      (stats.watertight ? `<span style="color:var(--good)">watertight ✓</span>`
+                        : `<span style="color:var(--bad)">not watertight</span>`) : "");
+  if (refit) {
+    const span = Math.max(size.x, size.y, size.z);
+    camera.position.set(span * 1.2, span * 0.9, span * 1.5);
+    controls.target.set(0, size.z / 2, 0);
+  }
+}
+
+// ------------------------------------------------------------- state + ui
+let partsList = [], selected = null, paramTypes = {};
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.opacity = 0, 2600);
+}
+
+function setBusy(busy, lbl) {
+  $("forge").disabled = busy;
+  $("dot").className = busy ? "busy" : "";
+  $("dotlbl").textContent = lbl || (busy ? "forging…" : "ready");
+}
+
+async function refreshLibrary(selectName) {
+  partsList = await api("parts");
+  const lib = $("library");
+  lib.innerHTML = "";
+  for (const p of partsList) {
+    const div = document.createElement("div");
+    div.className = "part" + (p.name === selected ? " sel" : "");
+    div.innerHTML = `<span class="nm">${p.name}</span>` +
+      `<span class="dm">${p.dims ? p.dims.join("×") + " mm" : "no stl"}</span>`;
+    div.onclick = () => selectPart(p.name);
+    lib.appendChild(div);
+  }
+  if (selectName) selectPart(selectName);
+}
+
+async function selectPart(name) {
+  selected = name;
+  document.querySelectorAll(".part").forEach(el =>
+    el.classList.toggle("sel", el.querySelector(".nm").textContent === name));
+  $("modwrap").style.display = "inline-flex";
+  $("modlbl").textContent = `modify “${name}”`;
+  const info = partsList.find(p => p.name === name);
+  const params = await api("params/" + name);
+  renderParams(params);
+  if (info?.has_stl) loadSTL(name, info);
+}
+
+function renderParams(params) {
+  const grid = $("pgrid");
+  grid.innerHTML = ""; paramTypes = {};
+  const keys = Object.keys(params || {});
+  $("params").style.display = keys.length ? "block" : "none";
+  $("pname").textContent = selected;
+  $("pstat").textContent = "";
+  for (const k of keys) {
+    const v = params[k];
+    paramTypes[k] = typeof v;
+    const lab = document.createElement("label");
+    lab.textContent = k.replaceAll("_", " ");
+    lab.title = k;
+    const inp = document.createElement("input");
+    inp.dataset.key = k;
+    if (typeof v === "number") { inp.type = "number"; inp.step = "0.5"; inp.value = v; }
+    else { inp.type = "text"; inp.value = v; }
+    grid.append(lab, inp);
+  }
+}
+
+function collectOverrides() {
+  const o = {};
+  for (const inp of $("pgrid").querySelectorAll("input")) {
+    const k = inp.dataset.key;
+    o[k] = paramTypes[k] === "number" ? parseFloat(inp.value) : inp.value;
+    if (paramTypes[k] === "number" && !isFinite(o[k])) delete o[k];
+  }
+  return o;
+}
+
+async function rebuild(endpoint) {
+  if (!selected) return;
+  setBusy(true, "rebuilding…");
+  $("pstat").textContent = "rebuilding…";
+  const res = await api(endpoint, { part: selected, overrides: collectOverrides() });
+  setBusy(false);
+  const stat = (res.log || "").match(/watertight=\S+[^\n]*/);
+  $("pstat").innerHTML = res.ok
+    ? `<span class="ok">✓</span> ${stat ? stat[0] : "rebuilt"}`
+    : `<span class="no">✗ build failed</span> — try different values`;
+  if (res.ok) {
+    await refreshLibrary();
+    const info = partsList.find(p => p.name === selected);
+    loadSTL(selected, info, false);
+    if (endpoint === "bake") toast("saved as the part's new defaults");
+  }
+}
+$("rerun").onclick = () => rebuild("rerun");
+$("bake").onclick = () => rebuild("bake");
+
+// ------------------------------------------------------------- forge flow
+const consoleEl = $("console");
+function logLine(text, cls) {
+  const last = consoleEl.lastChild;
+  if (last && last.textContent === text) return;
+  const div = document.createElement("div");
+  if (cls) div.className = cls;
+  div.textContent = text;
+  consoleEl.appendChild(div);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+$("forge").onclick = async () => {
+  const prompt = $("prompt").value.trim();
+  if (!prompt) { toast("describe the part first"); return; }
+  const modify = $("modify").checked && selected;
+  consoleEl.style.display = "block";
+  consoleEl.innerHTML = "";
+  $("auth").style.display = "none";
+  setBusy(true);
+  const { job } = await api("generate", { prompt, part: modify ? selected : null });
+  let logged = 0;
+  const poll = setInterval(async () => {
+    const j = await api("job/" + job);
+    (j.log || []).slice(logged).forEach(l => logLine(l));
+    logged = (j.log || []).length;
+    if (j.status === "running") return;
+    clearInterval(poll);
+    setBusy(false);
+    if (j.status === "done") {
+      logLine(j.summary || "part ready");
+      toast(j.summary || "part ready");
+      $("prompt").value = "";
+      $("modify").checked = false;
+      await refreshLibrary(j.part);
+    } else if (j.status === "auth") {
+      $("auth").style.display = "block";
+      logLine("engine needs its one-time login (see below)", "err");
+    } else {
+      logLine(j.error || "failed", "err");
+    }
+  }, 1200);
+};
+
+$("connect").onclick = async () => {
+  await api("connect", {});
+  toast("terminal opened — type /login and press Enter");
+};
+
+$("slicer").onclick = () => selected && api("open", { part: selected, target: "stl" });
+$("folder").onclick = () => selected && api("open", { part: selected, target: "folder" });
+
+// ------------------------------------------------------------- boot
+(async () => {
+  const h = await api("health");
+  if (!h.claude) { $("dot").className = "off"; $("dotlbl").textContent = "engine missing"; }
+  await refreshLibrary();
+  if (partsList[0]?.has_stl) selectPart(partsList[0].name);
+})();
+</script>
+</body>
+</html>

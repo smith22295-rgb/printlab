@@ -9,7 +9,7 @@ from shapely.geometry import Polygon
 
 import lib3d
 
-P = {
+P = lib3d.params({
     "width": 70,        # X, side to side
     "slot_width": 16,   # gap the phone sits in (case-friendly)
     "lip_height": 16,   # front lip that stops the phone sliding
@@ -17,7 +17,7 @@ P = {
     "recline_run": 32,  # how far back the rest leans over its rise
     "rest_top": 75,     # height of the back rest
     "rest_thick": 8,    # thickness of the back rest at the top
-}
+})
 
 
 def build():

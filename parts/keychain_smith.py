@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 import lib3d
 
-P = {
+P = lib3d.params({
     "name": "SMITH",
     "text_size": 16,      # font size, mm (cap height ~70% of this)
     "base_thick": 4,
@@ -14,7 +14,7 @@ P = {
     "pad": 6,             # border around the text
     "ring_outer": 7,      # keyring loop radii
     "ring_inner": 3.5,
-}
+})
 
 
 def build():

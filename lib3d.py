@@ -4,6 +4,8 @@ Part scripts import this, build a trimesh.Trimesh, and call export(mesh, "name")
 Booleans must go through union()/difference()/intersection() so the manifold
 engine guarantees watertight output.
 """
+import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +17,37 @@ OUT = Path(__file__).parent / "output"
 OUT.mkdir(exist_ok=True)
 
 PLATE = 256.0  # Bambu P1S build plate, mm (X and Y); max Z is 256 too
+
+
+def params(defaults):
+    """Wrap every part's P dict: P = lib3d.params({...}).
+
+    The PrintLab app re-runs parts with tweaked values via the PRINTLAB_P
+    env var (JSON) — no Claude call needed for size changes. Unknown keys
+    are ignored; types follow the default's type (numbers stay numbers).
+    """
+    out = dict(defaults)
+    raw = os.environ.get("PRINTLAB_P")
+    if not raw:
+        return out
+    try:
+        overrides = json.loads(raw)
+    except (ValueError, TypeError):
+        return out
+    for key, val in overrides.items():
+        if key not in out:
+            continue
+        cur = out[key]
+        try:
+            if isinstance(cur, bool):
+                out[key] = bool(val)
+            elif isinstance(cur, (int, float)):
+                out[key] = float(val) if float(val) != int(float(val)) else int(float(val))
+            else:
+                out[key] = str(val)
+        except (ValueError, TypeError):
+            pass
+    return out
 
 
 # ---------------------------------------------------------------- booleans

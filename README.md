@@ -1,34 +1,43 @@
 # PrintLab
 
-Personal 3D print file maker. No subscriptions, no per-model API fees — Claude
-writes the geometry as code on this machine and exports print-ready STLs.
+Personal 3D print file maker — a desktop app that turns plain-English
+descriptions into print-ready STLs. No subscriptions, no per-model fees:
+new parts are forged by Claude Code (your existing plan), and size tweaks
+re-run locally for free.
 
-## How to use it
+## Starting it
 
-Open Claude Code and describe the part in plain English:
+Double-click **PrintLab** on the Desktop (or `PrintLab.bat` in this folder).
+It starts the local server and opens the app window.
 
-> "Make me a wall hook for a 3/4 inch closet rod, two screw holes"
-> "A box with a sliding lid, 80 x 60 x 40 inside"
-> "A keychain that says ELLIE in rounded letters"
-> "Turn this photo into a lithophane" (attach the photo)
+## First run only
 
-Claude writes a script in `parts/`, runs it, and the STL lands in `output/`.
-Every part script has a `P = {...}` settings block at the top — say "make it
-20mm wider" or "thicker base" and Claude adjusts and re-runs.
+The forge engine needs a one-time login (it's Claude Code under the hood,
+using the plan you already pay for):
 
-## Previewing
+1. Click **Forge it** on anything — the app will show a "Connect" card
+2. Click **Connect** — a terminal opens
+3. Type `/login`, press Enter, finish the sign-in in your browser
+4. Close the terminal and forge again — it sticks from then on
 
-Double-click `viewer.html` and drag any STL onto it. Spin with the mouse,
-scroll to zoom. The blue square is the Bambu P1S build plate (256 x 256 mm).
+## Using it
 
-## Printing
+- **Forge a part** — describe it in the box ("a wall hook for a 19mm closet
+  rod, two screw holes") and click Forge. Watch the engine work in the live
+  console; the finished part loads in the viewer. Takes a minute or two.
+- **Tweak sizes free** — every part's dimensions appear as editable fields.
+  Change a number, click **Rebuild** — instant, no Claude usage. **Save as
+  defaults** writes the values into the part permanently.
+- **Modify with words** — select a part, tick "modify", and describe the
+  change ("add a second hook below the first").
+- **Print** — **Open in slicer** sends the STL to Bambu Studio;
+  **Show file** reveals it in Explorer. STLs live in `output/`.
 
-Drag the STL from `output/` into Bambu Studio and slice as usual. Every
-exported file is checked watertight before it's written.
+You can also just ask Claude Code directly in this folder — same toolkit,
+same conventions (see CLAUDE.md).
 
 ## What it can't do
 
-Organic sculpts (figurines from photos, faces, animals) need specialized
-AI mesh models — that's the one Meshy thing this doesn't replace. Functional
-parts, organizers, mounts, text, signs, cookie cutters, vases, lithophanes:
-all covered.
+Organic sculpts (figurines, faces, animals from photos) need specialized AI
+mesh models. Functional parts, organizers, mounts, text, signs, cookie
+cutters, vases, lithophanes: all covered.
