@@ -56,6 +56,44 @@ spend; do NOT re-propose them. Organic AI sculpts are out of scope.
 - Prefer building a 2D profile polygon and extruding over stacking booleans —
   fewer ops, always watertight (see parts/phone_stand.py).
 
+## Dual nozzle (X2D)
+
+Primary uses, in the user's priority order:
+1. **Dedicated support filament in nozzle 2** — overhangs cost less than on a
+   single-nozzle machine and interfaces come out clean. Still prefer
+   self-supporting geometry when it's free, but don't contort a design to
+   dodge supports; note "needs supports" in the SUMMARY when relevant.
+2. **Rigid + flexible in one print** (e.g. PETG body + TPU hinge/gasket/foot)
+   — build SEPARATE non-overlapping bodies in one coordinate frame and export
+   with `lib3d.export_multi({"rigid": m1, "flex": m2}, "<stem>")`. Carve the
+   flex body's space out of the rigid one with `difference()` using the SAME
+   mesh, so they sit flush.
+3. Two-color cosmetics (inlaid text etc.) — same export_multi mechanism,
+   user rarely wants this.
+- Multi-body parts cap X at 235 mm (aux-nozzle reach, `lib3d.DUAL_X`).
+- Slicer flow: open all `<stem>.<body>.stl` files together in Bambu Studio →
+  "load as a single object with multiple parts" → assign a filament per part.
+
+## Material rules (apply when the user names a material)
+
+- **PLA** (default): rigid, prints anything; min wall 1.2 mm (2 mm better);
+  print-in-place clearance 0.35–0.45 mm. Living hinges fatigue and snap —
+  use pin or strap hinges instead.
+- **PETG**: tough, slightly springy; clearances +0.05 over PLA (0.4–0.5
+  print-in-place); add fillets/chamfers at internal corners (notch-sensitive);
+  avoid wispy spires (strings).
+- **ABS/ASA**: fine on the X2D (heated chamber), but shrinks — prefer ribs
+  over bulk, avoid huge flat slabs (warp); ASA for anything outdoor/UV.
+- **TPU**: the flex material — living hinges, straps, gaskets, grippy feet;
+  flex zones 0.8–1.6 mm thick; tolerances don't matter (it squishes);
+  never TPU threads or crisp snap-fits.
+- **Material pairing** (one print, two nozzles): PETG+TPU bond strongly —
+  the rigid+flex combo of choice. PLA+TPU bonds poorly. PLA vs PETG barely
+  adhere to each other (that pairing is a support-interface trick, not a
+  bonded joint). Regardless of pairing, ALWAYS add mechanical interlock:
+  through-holes the flex fills, T-slots, or pegs — never rely on adhesion
+  alone at a working joint.
+
 ## Design judgment
 
 - Default wall/floor thickness ≥ 2 mm; raised text ≥ 1.2 mm proud, ≥ 3 mm

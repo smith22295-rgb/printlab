@@ -220,7 +220,8 @@ def run_part(part, overrides=None):
         capture_output=True, text=True, timeout=120,
         creationflags=subprocess.CREATE_NO_WINDOW)
     out = (proc.stdout + proc.stderr).strip()
-    ok = proc.returncode == 0 and "watertight=True" in out
+    ok = (proc.returncode == 0 and "watertight=True" in out
+          and "watertight=False" not in out)
     return ok, out
 
 
@@ -236,10 +237,21 @@ def list_parts():
     items = []
     for script in sorted(PARTS.glob("*.py")):
         stl = OUT / f"{script.stem}.stl"
-        item = {"name": script.stem, "has_stl": stl.exists()}
+        bodies = sorted(f.name.split(".")[1]
+                        for f in OUT.glob(f"{script.stem}.*.stl"))
+        item = {"name": script.stem, "has_stl": stl.exists(), "bodies": bodies}
         if stl.exists():
             try:
-                item.update(part_stats(stl))
+                stats = dict(part_stats(stl))
+                if bodies:
+                    # combined preview is touching shells — judge per body
+                    per = [part_stats(OUT / f"{script.stem}.{b}.stl")
+                           for b in bodies]
+                    stats["watertight"] = all(s["watertight"] for s in per)
+                    stats["volume_cm3"] = round(
+                        sum(s["volume_cm3"] or 0 for s in per), 1)
+                    stats["tris"] = sum(s["tris"] for s in per)
+                item.update(stats)
             except Exception as exc:  # unreadable STL shouldn't kill the list
                 item["error"] = str(exc)[:120]
         items.append(item)
@@ -374,16 +386,37 @@ async def connect():
     return {"ok": True}
 
 
+def find_bambu():
+    candidates = [
+        Path(os.environ.get("ProgramFiles", "")) / "Bambu Studio" / "bambu-studio.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "")) / "Bambu Studio" / "bambu-studio.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "BambuStudio" / "bambu-studio.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Bambu Studio" / "bambu-studio.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return shutil.which("bambu-studio")
+
+
 @app.post("/api/open")
 async def open_target(body: dict):
     part = safe_part(body.get("part"))
     if not part:
         return JSONResponse({"error": "unknown part"}, status_code=404)
-    stl = OUT / f"{part}.stl"
+    body_stls = sorted(OUT.glob(f"{part}.*.stl"))
+    stls = body_stls or [OUT / f"{part}.stl"]
     if body.get("target") == "folder":
-        subprocess.Popen(["explorer", "/select,", str(stl)])
-    elif stl.exists():
-        os.startfile(stl)  # opens in the default STL app (Bambu Studio)
+        subprocess.Popen(["explorer", "/select,", str(stls[0])])
+        return {"ok": True}
+    bambu = find_bambu()
+    if bambu:
+        # multi-body: Bambu Studio offers "load as single object with parts"
+        subprocess.Popen([bambu, *map(str, stls)])
+    elif len(stls) == 1 and stls[0].exists():
+        os.startfile(stls[0])  # default STL app
+    else:
+        subprocess.Popen(["explorer", "/select,", str(stls[0])])
     return {"ok": True}
 
 

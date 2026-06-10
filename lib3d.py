@@ -152,21 +152,31 @@ def rotate(mesh, degrees, axis):
 
 # ---------------------------------------------------------------- export
 
+def _clean(mesh):
+    m = mesh.copy()
+    m.merge_vertices()
+    m.update_faces(m.nondegenerate_faces())
+    m.update_faces(m.unique_faces())
+    m.remove_unreferenced_vertices()
+    if not m.is_watertight:
+        trimesh.repair.fill_holes(m)
+    trimesh.repair.fix_normals(m)
+    return m
+
+
+def _clear_bodies(name):
+    for old in OUT.glob(f"{name}.*.stl"):
+        old.unlink()
+
+
 def export(mesh, name):
     """Repair, validate, report, and write output/<name>.stl. Returns path."""
-    mesh = mesh.copy()
-    mesh.merge_vertices()
-    mesh.update_faces(mesh.nondegenerate_faces())
-    mesh.update_faces(mesh.unique_faces())
-    mesh.remove_unreferenced_vertices()
-    if not mesh.is_watertight:
-        trimesh.repair.fill_holes(mesh)
-    trimesh.repair.fix_normals(mesh)
-
+    mesh = _clean(mesh)
     # rest on the plate: drop so min Z = 0
     mesh.apply_translation([0, 0, -mesh.bounds[0][2]])
 
     dims = mesh.extents
+    _clear_bodies(name)  # part may have been multi-body before
     path = OUT / f"{name}.stl"
     mesh.export(path)
 
@@ -179,3 +189,59 @@ def export(mesh, name):
     if not mesh.is_watertight:
         print("  !! NOT WATERTIGHT — fix the geometry before printing")
     return path
+
+
+# X2D dual-nozzle: two-color/two-material prints lose width to the aux nozzle
+DUAL_X = 235.5
+
+
+def export_multi(bodies, name):
+    """Two-color/two-material export for the X2D's dual nozzles.
+
+    bodies: dict like {"base": mesh, "accent": mesh} — NON-overlapping meshes
+    positioned relative to each other in one coordinate frame. Writes
+    output/<name>.<body>.stl per body plus a combined output/<name>.stl
+    preview. In Bambu Studio: open all body files together, answer "load as
+    a single object with multiple parts", assign a filament to each part.
+    """
+    for key in bodies:
+        if not all(c.isalnum() or c == "_" for c in key):
+            raise ValueError(f"body name '{key}' must be letters/digits/_")
+    cleaned = {k: _clean(m) for k, m in bodies.items()}
+
+    drop = min(m.bounds[0][2] for m in cleaned.values())
+    for m in cleaned.values():
+        m.apply_translation([0, 0, -drop])
+
+    combined = trimesh.util.concatenate(list(cleaned.values()))
+    dims = combined.extents
+    fit = "OK" if (dims[0] <= DUAL_X and dims[1] <= PLATE[1]
+                   and dims[2] <= PLATE[2]) else "TOO BIG (dual-nozzle X cap is 235.5)"
+    print(f"[{name}] {len(cleaned)} bodies  "
+          f"dims={dims[0]:.1f} x {dims[1]:.1f} x {dims[2]:.1f} mm  plate_fit={fit}")
+
+    keys = list(cleaned)
+    for i, a in enumerate(keys):
+        for b in keys[i + 1:]:
+            try:
+                inter = trimesh.boolean.intersection(
+                    [cleaned[a], cleaned[b]], engine="manifold")
+                if inter.volume > 10:  # mm3 — flush faces are fine, volume isn't
+                    print(f"  !! bodies '{a}' and '{b}' overlap by "
+                          f"{inter.volume / 1000:.2f} cm3 — fix before printing")
+            except Exception:
+                pass
+
+    _clear_bodies(name)
+    paths = []
+    for key, m in cleaned.items():
+        path = OUT / f"{name}.{key}.stl"
+        m.export(path)
+        paths.append(path)
+        print(f"  [{key}] watertight={m.is_watertight}  "
+              f"volume={m.volume / 1000:.1f} cm3  tris={len(m.faces)}")
+        if not m.is_watertight:
+            print(f"  !! body '{key}' NOT WATERTIGHT — fix before printing")
+    combined.export(OUT / f"{name}.stl")
+    print(f"  -> {OUT / name}.*.stl ({len(paths)} bodies + combined preview)")
+    return paths

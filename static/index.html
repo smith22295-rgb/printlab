@@ -191,9 +191,8 @@ scene.add(new THREE.LineLoop(
     new THREE.Vector3(-128, 0, -128), new THREE.Vector3(128, 0, -128),
     new THREE.Vector3(128, 0, 128), new THREE.Vector3(-128, 0, 128)]),
   new THREE.LineBasicMaterial({ color: 0xf0a843 })));
-const material = new THREE.MeshStandardMaterial({
-  color: 0x8fb0d8, metalness: 0.05, roughness: 0.55 });
-let mesh = null;
+const BODY_COLORS = [0x8fb0d8, 0xf0a843, 0x7fc98f, 0xd88fb0];
+let mesh = null; // THREE.Group holding one Mesh per body
 
 function fit() {
   const w = main.clientWidth, h = main.clientHeight;
@@ -206,22 +205,37 @@ fit();
 
 const loader = new STLLoader();
 async function loadSTL(name, stats, refit = true) {
-  const buf = await fetch(`/output/${name}.stl?t=${stats?.mtime || Date.now()}`)
-    .then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); }).catch(() => null);
-  if (!buf) return;
-  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
-  const geo = loader.parse(buf);
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox, size = new THREE.Vector3();
-  bb.getSize(size);
-  geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
-  geo.computeVertexNormals();
-  mesh = new THREE.Mesh(geo, material);
+  const files = stats?.bodies?.length
+    ? stats.bodies.map(b => `${name}.${b}.stl`) : [`${name}.stl`];
+  const bufs = await Promise.all(files.map(f =>
+    fetch(`/output/${f}?t=${stats?.mtime || Date.now()}`)
+      .then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
+      .catch(() => null)));
+  if (bufs.some(b => !b)) return;
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.traverse(o => o.geometry && o.geometry.dispose());
+  }
+  const geos = bufs.map(b => loader.parse(b));
+  const box = new THREE.Box3();
+  geos.forEach(g => { g.computeBoundingBox(); box.union(g.boundingBox); });
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  mesh = new THREE.Group();
+  geos.forEach((g, i) => {
+    g.translate(-(box.min.x + box.max.x) / 2, -(box.min.y + box.max.y) / 2, -box.min.z);
+    g.computeVertexNormals();
+    mesh.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+      color: BODY_COLORS[i % BODY_COLORS.length],
+      metalness: 0.05, roughness: 0.55 })));
+  });
   mesh.rotation.x = -Math.PI / 2;
   scene.add(mesh);
   $("empty").style.display = "none";
   $("actions").style.display = "flex";
-  $("bar").innerHTML = `<b>${name}</b><span>${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm</span>` +
+  const bodyChip = files.length > 1
+    ? `<span style="color:var(--amber)">${files.length} bodies</span>` : "";
+  $("bar").innerHTML = `<b>${name}</b><span>${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm</span>` + bodyChip +
     (stats ? `<span>${(stats.tris || 0).toLocaleString()} tris</span>` +
       (stats.watertight ? `<span style="color:var(--good)">watertight ✓</span>`
                         : `<span style="color:var(--bad)">not watertight</span>`) : "");
@@ -272,7 +286,11 @@ async function refreshLibrary(selectName) {
 
 function clearSelection() {
   selected = null;
-  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh = null; }
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.traverse(o => o.geometry && o.geometry.dispose());
+    mesh = null;
+  }
   $("empty").style.display = "flex";
   $("actions").style.display = "none";
   $("params").style.display = "none";
