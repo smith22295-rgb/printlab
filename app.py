@@ -73,6 +73,9 @@ Rules — follow exactly:
   Iterate until the output line says watertight=True and plate_fit=OK.
 - Touch nothing outside parts/ and output/.
 - Design for FDM printing: flat face down, >=2mm walls, no floating geometry.
+- No sharp corners: include a "soften" param (mm, 0 = off, default 2) and
+  round non-functional edges via lib3d.soften() / lib3d.rounded_box().
+  The bed-contact face always stays flat.
 
 Your FINAL reply must be exactly two lines:
 PART=<stem>

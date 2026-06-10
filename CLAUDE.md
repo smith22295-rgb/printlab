@@ -102,6 +102,13 @@ Primary uses, in the user's priority order:
 
 ## Design judgment
 
+- **Soft edges (user-mandated): no nasty sharp corners.** Every part gets a
+  `"soften"` param (mm radius, 0 = off, default ~2) wired through
+  `lib3d.soften()` on its silhouette/profile — for vertical profiles pass
+  `keep_flat_y=0` so the bed face stays flat. Use `lib3d.rounded_box()` for
+  slabs/bases (rounded verticals + top, flat bottom). Functional surfaces
+  are exempt: seam dovetails, threads, snap-fits, and the bed-contact face
+  stay crisp. Keep r under half the thinnest feature or details vanish.
 - Default wall/floor thickness ≥ 2 mm; raised text ≥ 1.2 mm proud, ≥ 3 mm
   cap height; holes for M3 screws = 3.4 mm dia, countersink 6.5 mm.
 - Think about print orientation: flat face down, avoid unsupported overhangs

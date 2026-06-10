@@ -17,6 +17,7 @@ P = lib3d.params({
     "recline_run": 32,  # how far back the rest leans over its rise
     "rest_top": 75,     # height of the back rest
     "rest_thick": 8,    # thickness of the back rest at the top
+    "soften": 2,        # corner rounding radius, 0 = sharp edges
 })
 
 
@@ -35,6 +36,7 @@ def build():
         (top_front_y + P["rest_thick"] + 14, 8),  # sloped back
         (top_front_y + P["rest_thick"] + 14, 0),
     ])
+    profile = lib3d.soften(profile, P["soften"], keep_flat_y=0)
     wedge = lib3d.extrude(profile, P["width"])
     # extruded in XY+Z; remap so width=X, depth=Y, height=Z
     wedge.apply_transform(np.array([

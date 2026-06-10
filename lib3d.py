@@ -87,6 +87,37 @@ def rounded_rect(w, h, r):
     return core.buffer(r, quad_segs=24)
 
 
+def soften(shape, r, keep_flat_y=None):
+    """Round EVERY corner of a 2D shape (convex and concave) by radius r.
+
+    The standard anti-sharp-edge pass: apply to a silhouette/profile before
+    extruding. r=0 returns the shape unchanged (the off switch). Features
+    thinner than 2*r will vanish — keep r under half the thinnest feature.
+
+    keep_flat_y: for VERTICAL profiles (side views), pass the bed line's y
+    (usually 0) — everything along that line stays flat for bed contact
+    while the rest of the profile gets rounded. Not needed for plan-view
+    silhouettes, where the bed face is untouched by 2D softening.
+    """
+    if not r or r <= 0:
+        return shape
+    q = 24
+    if keep_flat_y is None:
+        work = shape
+    else:
+        from shapely.affinity import translate as _translate
+        from shapely.geometry import box as _sbox
+        # extend the shape below the bed line so rounding can't curl it up
+        work = unary_union([shape, _translate(shape, yoff=-3 * r)])
+    out = (work.buffer(r, quad_segs=q)
+               .buffer(-2 * r, quad_segs=q)
+               .buffer(r, quad_segs=q))
+    if keep_flat_y is not None:
+        minx, miny, maxx, maxy = shape.bounds
+        out = out.intersection(_sbox(minx - 1, keep_flat_y, maxx + 1, maxy + 1))
+    return out
+
+
 def text_polygons(text, size_mm, font="DejaVu Sans", weight="bold"):
     """Render text to shapely geometry. size_mm is the font size (cap height
     lands around 0.7 * size_mm). Returns geometry with holes handled (O, A...).
@@ -131,6 +162,34 @@ def box(w, d, h, center=True):
     if not center:
         m.apply_translation([w / 2, d / 2, h / 2])
     return m
+
+
+def rounded_box(w, d, h, r=2.0):
+    """Brick with rounded vertical edges AND rounded top edges; the bottom
+    face stays FLAT (it's the bed-contact face — rounding it kills adhesion
+    and creates sub-45-degree overhangs). Sits on z=0, centered in XY.
+    """
+    r = min(r, w / 2 - 0.1, d / 2 - 0.1, h / 2)
+    if r <= 0:
+        return move(box(w, d, h), z=h / 2)
+    s2d = rounded_rect(w, d, r)
+    parts = [
+        extrude(s2d, h - r),                  # full footprint, below the roll
+        extrude(s2d.buffer(-r), h),           # inset core, full height
+    ]
+    # roll the top edges: cylinders along the straight runs, spheres at corners
+    cx, cy = w / 2 - r, d / 2 - r
+    for sy in (-1, 1):
+        parts.append(move(rotate(cylinder(r, w - 2 * r), 90, [0, 1, 0]),
+                          y=sy * cy, z=h - r))
+    for sx in (-1, 1):
+        parts.append(move(rotate(cylinder(r, d - 2 * r), 90, [1, 0, 0]),
+                          x=sx * cx, z=h - r))
+    sphere = trimesh.creation.icosphere(subdivisions=3, radius=r)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            parts.append(move(sphere, x=sx * cx, y=sy * cy, z=h - r))
+    return union(parts)
 
 
 def cylinder(radius, height, sections=64):
