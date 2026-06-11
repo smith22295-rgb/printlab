@@ -511,7 +511,9 @@ app.mount("/output", StaticFiles(directory=OUT), name="output")
 
 @app.get("/")
 def index():
-    return FileResponse(ROOT / "static" / "index.html")
+    # no-store so UI updates appear on every relaunch, not behind Edge's cache
+    return FileResponse(ROOT / "static" / "index.html",
+                        headers={"Cache-Control": "no-store"})
 
 
 if __name__ == "__main__":
