@@ -38,12 +38,31 @@ def find_claude():
     on_path = shutil.which("claude")
     if on_path:
         return on_path
-    bundled = Path(os.environ.get("APPDATA", "")) / "Claude" / "claude-code"
-    if bundled.exists():
-        exes = sorted(bundled.glob("*/claude.exe"), key=lambda p: p.stat().st_mtime)
-        if exes:
-            return str(exes[-1])
+    roots = []
+    if os.environ.get("APPDATA"):
+        roots.append(Path(os.environ["APPDATA"]))
+    try:  # survive stripped environments (no APPDATA): derive from home
+        roots.append(Path.home() / "AppData" / "Roaming")
+    except (RuntimeError, OSError):
+        pass
+    for root in dict.fromkeys(roots):
+        bundled = root / "Claude" / "claude-code"
+        if bundled.exists():
+            exes = sorted(bundled.glob("*/claude.exe"),
+                          key=lambda p: p.stat().st_mtime)
+            if exes:
+                return str(exes[-1])
+    try:
+        native = Path.home() / ".local" / "bin" / "claude.exe"
+        if native.exists():
+            return str(native)
+    except (RuntimeError, OSError):
+        pass
     return None
+
+
+ENGINE_MISSING = ("Claude engine not found on this PC. Open the Claude "
+                  "desktop app once (it installs the engine), then try again.")
 
 
 def clean_env():
@@ -92,7 +111,7 @@ def run_forge(job_id, request, part=None):
     job = JOBS[job_id]
     claude = find_claude()
     if not claude:
-        job.update(status="error", error="Claude engine not found on this PC.")
+        job.update(status="error", error=ENGINE_MISSING)
         return
     mode_line = MODE_EDIT.format(part=part) if part else MODE_NEW
     prompt = FORGE_PROMPT.format(request=request, mode_line=mode_line)
@@ -383,7 +402,7 @@ def job_status(job_id: str):
 async def connect():
     claude = find_claude()
     if not claude:
-        return {"ok": False, "error": "Claude engine not found."}
+        return {"ok": False, "error": ENGINE_MISSING}
     subprocess.Popen([str(ROOT / "tools" / "engine_login.bat"), claude],
                      cwd=ROOT, creationflags=subprocess.CREATE_NEW_CONSOLE)
     return {"ok": True}
