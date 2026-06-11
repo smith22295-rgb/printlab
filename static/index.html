@@ -70,6 +70,12 @@
                  padding: 0 4px; font-size: 13px; cursor: pointer; }
   .acts button:hover { color: var(--amber); }
 
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chip { font-size: 11px; color: var(--dim); border: 1px solid var(--line);
+          border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+  .chip:hover { color: var(--amber); border-color: var(--amber2); }
+  button.on { color: var(--amber) !important; border-color: var(--amber2) !important; }
+
   #params { display: none; }
   .pgrid { display: grid; grid-template-columns: 1fr 92px; gap: 6px 10px;
            align-items: center; }
@@ -112,6 +118,14 @@
 
     <div class="section">
       <div class="label">Forge a part</div>
+      <div id="chips">
+        <span class="chip" data-p="a box with a fitted sliding lid, 80 × 60 × 40 mm inside">box + lid</span>
+        <span class="chip" data-p="a wall hook for a 19mm closet rod with two countersunk screw holes">wall hook</span>
+        <span class="chip" data-p="a desk tray with 3 divided compartments, 180 × 120 × 35 mm">divided tray</span>
+        <span class="chip" data-p="a desk sign with raised text that says HELLO, angled back 15 degrees">text sign</span>
+        <span class="chip" data-p="a cable clip that snaps onto a desk edge 25mm thick">cable clip</span>
+        <span class="chip" data-p="a PETG bracket with a TPU pad where it touches the wall">rigid + flex</span>
+      </div>
       <textarea id="prompt" placeholder="Describe it in plain English…&#10;e.g. a wall hook for a 19mm closet rod, two screw holes"></textarea>
       <div class="row">
         <button id="forge">Forge it</button>
@@ -135,6 +149,7 @@
       <div class="row">
         <button id="rerun">Rebuild</button>
         <button id="bake" class="ghost">Save as defaults</button>
+        <button id="undo" class="ghost" style="display:none">↩ undo</button>
       </div>
       <div id="pstat"></div>
     </div>
@@ -149,6 +164,7 @@
     <div id="bar"></div>
     <div id="empty">Forge your first part, or pick one from the library</div>
     <div id="actions" style="display:none">
+      <button id="overhang" class="ghost" title="paint surfaces that need supports red">Overhangs</button>
       <button id="slicer" class="ghost">Open in slicer</button>
       <button id="folder" class="ghost">Show file</button>
     </div>
@@ -235,16 +251,56 @@ async function loadSTL(name, stats, refit = true) {
   $("actions").style.display = "flex";
   const bodyChip = files.length > 1
     ? `<span style="color:var(--amber)">${files.length} bodies</span>` : "";
+  const grams = stats?.volume_cm3 ? stats.volume_cm3 * 1.24 : 0; // solid PLA
+  const costChip = grams ? `<span>≈ ${Math.round(grams)} g · ` +
+    `$${(grams * 0.02).toFixed(2)} solid PLA</span>` : "";
   $("bar").innerHTML = `<b>${name}</b><span>${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm</span>` + bodyChip +
-    (stats ? `<span>${(stats.tris || 0).toLocaleString()} tris</span>` +
+    (stats ? `<span>${(stats.tris || 0).toLocaleString()} tris</span>` + costChip +
       (stats.watertight ? `<span style="color:var(--good)">watertight ✓</span>`
                         : `<span style="color:var(--bad)">not watertight</span>`) : "");
+  if (overhangOn) setOverhang(true);
   if (refit) {
     const span = Math.max(size.x, size.y, size.z);
     camera.position.set(span * 1.2, span * 0.9, span * 1.5);
     controls.target.set(0, size.z / 2, 0);
   }
 }
+
+// ---------------------------------------------------- overhang x-ray view
+let overhangOn = false;
+function setOverhang(on) {
+  overhangOn = on;
+  $("overhang").classList.toggle("on", on);
+  if (!mesh) return;
+  mesh.children.forEach(m => {
+    if (on) {
+      const pos = m.geometry.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+      const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+      for (let t = 0; t < pos.count; t += 3) {
+        a.fromBufferAttribute(pos, t); b.fromBufferAttribute(pos, t + 1); c.fromBufferAttribute(pos, t + 2);
+        n.crossVectors(ab.subVectors(b, a), ac.subVectors(c, a)).normalize();
+        // faces tilted >45° downward need supports — unless they sit on the bed
+        const bad = n.z < -0.71 && Math.min(a.z, b.z, c.z) > 0.3;
+        for (let k = 0; k < 3; k++) {
+          const o = (t + k) * 3;
+          if (bad) { colors[o] = 0.92; colors[o + 1] = 0.30; colors[o + 2] = 0.30; }
+          else { colors[o] = 0.62; colors[o + 1] = 0.68; colors[o + 2] = 0.75; }
+        }
+      }
+      m.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      if (!m.userData.plain) m.userData.plain = m.material;
+      m.material = new THREE.MeshStandardMaterial({
+        vertexColors: true, metalness: 0.05, roughness: 0.6 });
+    } else if (m.userData.plain) {
+      m.material.dispose();
+      m.material = m.userData.plain;
+      m.userData.plain = null;
+    }
+  });
+}
+$("overhang").onclick = () => setOverhang(!overhangOn);
 
 // ------------------------------------------------------------- state + ui
 let partsList = [], selected = null, paramTypes = {};
@@ -332,8 +388,27 @@ async function selectPart(name) {
   const info = partsList.find(p => p.name === name);
   const params = await api("params/" + name);
   renderParams(params);
+  const undo = $("undo");
+  undo.style.display = info?.history ? "inline-block" : "none";
+  undo.textContent = `↩ undo (${info?.history || 0})`;
   if (info?.has_stl) loadSTL(name, info);
 }
+
+$("undo").onclick = async () => {
+  if (!selected) return;
+  if (!confirm(`Put “${selected}” back to the version before its last change?`)) return;
+  setBusy(true, "restoring…");
+  const res = await api("restore", { part: selected });
+  setBusy(false);
+  if (!res.ok) { toast(res.error || "restore failed"); return; }
+  toast("previous version restored");
+  await refreshLibrary(selected);
+};
+
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => {
+  $("prompt").value = c.dataset.p;
+  $("prompt").focus();
+});
 
 function renderParams(params) {
   const grid = $("pgrid");

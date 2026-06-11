@@ -1,5 +1,6 @@
 venv/
 output/
 trash/
+history/
 __pycache__/
 *.pyc

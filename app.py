@@ -24,8 +24,21 @@ from fastapi.staticfiles import StaticFiles
 ROOT = Path(__file__).parent
 PARTS = ROOT / "parts"
 OUT = ROOT / "output"
+HIST = ROOT / "history"
 VENV_PY = ROOT / "venv" / "Scripts" / "python.exe"
 PORT = 8123
+
+
+def snapshot(part):
+    """Save the part script before changing it, so the UI can undo."""
+    src = PARTS / f"{part}.py"
+    if not src.exists():
+        return
+    HIST.mkdir(exist_ok=True)
+    shutil.copy2(src, HIST / f"{part}.{time.strftime('%Y%m%d-%H%M%S')}.py")
+    snaps = sorted(HIST.glob(f"{part}.*.py"))
+    for old in snaps[:-20]:
+        old.unlink()
 
 app = FastAPI()
 JOBS = {}          # id -> {status, log[], part, summary, error}
@@ -113,6 +126,8 @@ def run_forge(job_id, request, part=None):
     if not claude:
         job.update(status="error", error=ENGINE_MISSING)
         return
+    if part:
+        snapshot(part)
     mode_line = MODE_EDIT.format(part=part) if part else MODE_NEW
     prompt = FORGE_PROMPT.format(request=request, mode_line=mode_line)
     cmd = [claude, "-p", prompt,
@@ -261,7 +276,9 @@ def list_parts():
         stl = OUT / f"{script.stem}.stl"
         bodies = sorted(f.name.split(".")[1]
                         for f in OUT.glob(f"{script.stem}.*.stl"))
-        item = {"name": script.stem, "has_stl": stl.exists(), "bodies": bodies}
+        item = {"name": script.stem, "has_stl": stl.exists(), "bodies": bodies,
+                "history": len(list(HIST.glob(f"{script.stem}.*.py")))
+                if HIST.exists() else 0}
         if stl.exists():
             try:
                 stats = dict(part_stats(stl))
@@ -304,6 +321,7 @@ async def bake(body: dict):
     if not part:
         return JSONResponse({"error": "unknown part"}, status_code=404)
     overrides = body.get("overrides") or {}
+    snapshot(part)
     path = PARTS / f"{part}.py"
     src = path.read_text(encoding="utf-8")
     match = re.search(r"(P\s*=\s*lib3d\.params\(\{)(.*?)(\}\))", src, re.S)
@@ -318,6 +336,20 @@ async def bake(body: dict):
     path.write_text(src[:match.start(2)] + block + src[match.end(2):], encoding="utf-8")
     ok, out = run_part(part)
     return {"ok": ok, "log": out[-600:]}
+
+
+@app.post("/api/restore")
+async def restore(body: dict):
+    part = safe_part(body.get("part"))
+    if not part:
+        return JSONResponse({"error": "unknown part"}, status_code=404)
+    snaps = sorted(HIST.glob(f"{part}.*.py")) if HIST.exists() else []
+    if not snaps:
+        return {"ok": False, "error": "no earlier version saved for this part"}
+    shutil.copy2(snaps[-1], PARTS / f"{part}.py")
+    snaps[-1].unlink()
+    ok, out = run_part(part)
+    return {"ok": ok, "log": out[-600:], "remaining": len(snaps) - 1}
 
 
 @app.post("/api/delete")

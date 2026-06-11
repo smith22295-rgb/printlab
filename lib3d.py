@@ -87,7 +87,7 @@ def rounded_rect(w, h, r):
     return core.buffer(r, quad_segs=24)
 
 
-def soften(shape, r, keep_flat_y=None):
+def soften(shape, r, keep_flat_y=None, style="round"):
     """Round EVERY corner of a 2D shape (convex and concave) by radius r.
 
     The standard anti-sharp-edge pass: apply to a silhouette/profile before
@@ -98,10 +98,13 @@ def soften(shape, r, keep_flat_y=None):
     (usually 0) — everything along that line stays flat for bed contact
     while the rest of the profile gets rounded. Not needed for plan-view
     silhouettes, where the bed face is untouched by 2D softening.
+
+    style: "round" (fillet, default) or "chamfer" (flat 45-degree bevel).
     """
     if not r or r <= 0:
         return shape
     q = 24
+    js = "round" if style != "chamfer" else "bevel"
     if keep_flat_y is None:
         work = shape
     else:
@@ -109,9 +112,9 @@ def soften(shape, r, keep_flat_y=None):
         from shapely.geometry import box as _sbox
         # extend the shape below the bed line so rounding can't curl it up
         work = unary_union([shape, _translate(shape, yoff=-3 * r)])
-    out = (work.buffer(r, quad_segs=q)
-               .buffer(-2 * r, quad_segs=q)
-               .buffer(r, quad_segs=q))
+    out = (work.buffer(r, quad_segs=q, join_style=js)
+               .buffer(-2 * r, quad_segs=q, join_style=js)
+               .buffer(r, quad_segs=q, join_style=js))
     if keep_flat_y is not None:
         minx, miny, maxx, maxy = shape.bounds
         out = out.intersection(_sbox(minx - 1, keep_flat_y, maxx + 1, maxy + 1))
