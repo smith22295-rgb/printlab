@@ -129,7 +129,14 @@
       <textarea id="prompt" placeholder="Describe it in plain English…&#10;e.g. a wall hook for a 19mm closet rod, two screw holes"></textarea>
       <div class="row">
         <button id="forge">Forge it</button>
+        <button id="attach" class="ghost" title="attach a reference image — a photo, drawing, or sketch">📎 image</button>
         <span id="modwrap"><input type="checkbox" id="modify"><label for="modify" id="modlbl">modify selected</label></span>
+      </div>
+      <input id="imgfile" type="file" accept="image/*" style="display:none">
+      <div id="refwrap" style="display:none; align-items:center; gap:8px; margin-top:8px;">
+        <img id="refthumb" style="height:42px; border-radius:6px; border:1px solid var(--line);">
+        <span style="font-size:12px; color:var(--dim);">reference attached</span>
+        <button id="refclear" class="ghost" style="padding:2px 8px; font-size:12px;">✕</button>
       </div>
       <div id="console"></div>
       <div id="auth">
@@ -473,6 +480,28 @@ function logLine(text, cls) {
   consoleEl.scrollTop = consoleEl.scrollHeight;
 }
 
+let refImage = null;
+$("attach").onclick = () => $("imgfile").click();
+$("imgfile").onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    refImage = r.result;
+    $("refthumb").src = refImage;
+    $("refwrap").style.display = "flex";
+    $("attach").classList.add("on");
+  };
+  r.readAsDataURL(f);
+};
+function clearRef() {
+  refImage = null;
+  $("imgfile").value = "";
+  $("refwrap").style.display = "none";
+  $("attach").classList.remove("on");
+}
+$("refclear").onclick = clearRef;
+
 $("forge").onclick = async () => {
   const prompt = $("prompt").value.trim();
   if (!prompt) { toast("describe the part first"); return; }
@@ -481,7 +510,8 @@ $("forge").onclick = async () => {
   consoleEl.innerHTML = "";
   $("auth").style.display = "none";
   setBusy(true);
-  const { job } = await api("generate", { prompt, part: modify ? selected : null });
+  const { job } = await api("generate",
+    { prompt, part: modify ? selected : null, image: refImage });
   let logged = 0;
   const poll = setInterval(async () => {
     const j = await api("job/" + job);
@@ -495,6 +525,7 @@ $("forge").onclick = async () => {
       toast(j.summary || "part ready");
       $("prompt").value = "";
       $("modify").checked = false;
+      clearRef();
       await refreshLibrary(j.part);
     } else if (j.status === "auth") {
       $("auth").style.display = "block";

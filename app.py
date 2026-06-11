@@ -5,6 +5,7 @@ with tweaked parameters (free, instant), and spawns Claude Code headless
 (`claude -p`, billed to the user's existing plan) to forge new parts.
 """
 import ast
+import base64
 import json
 import os
 import re
@@ -94,7 +95,11 @@ print file maker. A user (not a developer) typed this request into the app:
 
 {mode_line}
 
+{image_line}
 Rules — follow exactly:
+- Skim TECHNIQUES.md first and pick the right construction recipe (revolve,
+  sweep, image_outline, profile extrude...) — and look at 1-2 similar scripts
+  in parts/ as worked examples instead of inventing geometry from scratch.
 - Conventions and helpers: read CLAUDE.md and lib3d.py in this repo if unsure.
 - The script's tunable dimensions live in `P = lib3d.params({{...}})` at the
   top, every value a plain number or string literal with a short comment.
@@ -120,7 +125,14 @@ MODE_EDIT = ("Revise the EXISTING part script parts/{part}.py per the request "
              "(edit its P defaults and/or geometry). Keep the same filename.")
 
 
-def run_forge(job_id, request, part=None):
+IMAGE_LINE = ("The user attached a reference image at {path} — VIEW it with "
+              "the Read tool FIRST. Decide whether they want its exact 2D "
+              "shape (use lib3d.image_outline on that same path) or a 3D "
+              "model of the object it shows (model proportions and features "
+              "yourself). Say which you chose in the SUMMARY.")
+
+
+def run_forge(job_id, request, part=None, image_path=None):
     job = JOBS[job_id]
     claude = find_claude()
     if not claude:
@@ -129,7 +141,9 @@ def run_forge(job_id, request, part=None):
     if part:
         snapshot(part)
     mode_line = MODE_EDIT.format(part=part) if part else MODE_NEW
-    prompt = FORGE_PROMPT.format(request=request, mode_line=mode_line)
+    image_line = IMAGE_LINE.format(path=image_path) if image_path else ""
+    prompt = FORGE_PROMPT.format(request=request, mode_line=mode_line,
+                                 image_line=image_line)
     cmd = [claude, "-p", prompt,
            "--output-format", "stream-json", "--verbose",
            "--model", "opus", "--max-turns", "30",
@@ -417,9 +431,27 @@ async def generate(body: dict):
         return JSONResponse({"error": "empty prompt"}, status_code=400)
     part = safe_part(body.get("part")) if body.get("part") else None
     job_id = uuid.uuid4().hex[:10]
+
+    image_path = None
+    if body.get("image"):
+        m = re.match(r"data:image/(png|jpe?g|webp|gif|bmp);base64,(.+)",
+                     body["image"], re.S)
+        if not m:
+            return JSONResponse({"error": "unsupported image"}, status_code=400)
+        raw = base64.b64decode(m.group(2))
+        if len(raw) > 12_000_000:
+            return JSONResponse({"error": "image too large (12MB max)"},
+                                status_code=400)
+        refs = ROOT / "refs"
+        refs.mkdir(exist_ok=True)
+        ext = "jpg" if m.group(1).startswith("jpe") else m.group(1)
+        path = refs / f"ref_{job_id}.{ext}"
+        path.write_bytes(raw)
+        image_path = f"refs/ref_{job_id}.{ext}"
+
     JOBS[job_id] = {"status": "running", "log": ["sending to the engine…"],
                     "part": part, "summary": "", "error": ""}
-    threading.Thread(target=run_forge, args=(job_id, request, part),
+    threading.Thread(target=run_forge, args=(job_id, request, part, image_path),
                      daemon=True).start()
     return {"job": job_id}
 

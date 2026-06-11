@@ -121,6 +121,24 @@ def soften(shape, r, keep_flat_y=None, style="round"):
     return out
 
 
+def _assemble_rings(rings):
+    """Turn a soup of closed rings into polygons with holes (even-odd)."""
+    rings = [r if r.is_valid else r.buffer(0) for r in rings]
+    rings = [r for r in rings if r.area > 1e-6]
+    rings.sort(key=lambda r: -r.area)
+    shells, holes = [], []
+    for r in rings:
+        pt = r.representative_point()
+        depth = sum(1 for other in rings if other is not r
+                    and other.area > r.area and other.contains(pt))
+        (shells if depth % 2 == 0 else holes).append(r)
+    bodies = []
+    for s in shells:
+        mine = [h.exterior.coords for h in holes if s.contains(h.representative_point())]
+        bodies.append(Polygon(s.exterior.coords, mine))
+    return unary_union(bodies)
+
+
 def text_polygons(text, size_mm, font="DejaVu Sans", weight="bold"):
     """Render text to shapely geometry. size_mm is the font size (cap height
     lands around 0.7 * size_mm). Returns geometry with holes handled (O, A...).
@@ -130,24 +148,45 @@ def text_polygons(text, size_mm, font="DejaVu Sans", weight="bold"):
 
     tp = TextPath((0, 0), text, size=size_mm,
                   prop=FontProperties(family=font, weight=weight))
-    rings = [Polygon(p) for p in tp.to_polygons() if len(p) >= 3]
-    rings = [r if r.is_valid else r.buffer(0) for r in rings]
-    rings = [r for r in rings if r.area > 1e-6]
-    rings.sort(key=lambda r: -r.area)
+    return _assemble_rings([Polygon(p) for p in tp.to_polygons() if len(p) >= 3])
 
-    # even containment depth = letter body, odd = hole in the letter above it
-    shells, holes = [], []
-    for r in rings:
-        pt = r.representative_point()
-        depth = sum(1 for other in rings if other is not r
-                    and other.area > r.area and other.contains(pt))
-        (shells if depth % 2 == 0 else holes).append(r)
 
-    bodies = []
-    for s in shells:
-        mine = [h.exterior.coords for h in holes if s.contains(h.representative_point())]
-        bodies.append(Polygon(s.exterior.coords, mine))
-    return unary_union(bodies)
+def image_outline(image_path, width_mm, threshold=128, simplify_mm=0.2):
+    """Trace the DARK shape in an image into 2D geometry, scaled to width_mm
+    and centered on the origin. Light = background, dark = shape — works for
+    kid drawings, logos, silhouettes, sketches. Extrude the result for flat
+    ornaments; offset with .buffer() for cookie-cutter walls; difference it
+    for engravings. Holes inside the shape are preserved.
+    """
+    import numpy as np
+    from PIL import Image as _Image
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as _plt
+
+    arr = np.asarray(_Image.open(image_path).convert("L"), dtype=float)
+    arr = arr[::-1]  # image rows run downward; geometry y runs up
+    fig = _plt.figure()
+    try:
+        cs = _plt.contour(arr, levels=[threshold])
+        try:
+            segs = cs.allsegs[0]
+        except AttributeError:
+            segs = [p.vertices for p in cs.get_paths()]
+    finally:
+        _plt.close(fig)
+    geom = _assemble_rings([Polygon(s) for s in segs if len(s) >= 3])
+    if geom.is_empty:
+        raise ValueError("no shape found in the image — adjust threshold")
+
+    from shapely.affinity import scale as _scale, translate as _translate
+    minx, miny, maxx, maxy = geom.bounds
+    f = width_mm / (maxx - minx)
+    geom = _scale(geom, xfact=f, yfact=f, origin=(0, 0))
+    if simplify_mm:
+        geom = geom.simplify(simplify_mm)
+    minx, miny, maxx, maxy = geom.bounds
+    return _translate(geom, -(minx + maxx) / 2, -(miny + maxy) / 2)
 
 
 # ---------------------------------------------------------------- 3D builders
@@ -197,6 +236,26 @@ def rounded_box(w, d, h, r=2.0):
 
 def cylinder(radius, height, sections=64):
     return trimesh.creation.cylinder(radius=radius, height=height, sections=sections)
+
+
+def revolve(profile_points, sections=96):
+    """Lathe: spin a 2D profile around the Z axis — bowls, vases, knobs,
+    funnels, feet. profile_points = [(radius, z), ...] with radius >= 0;
+    for a SOLID part, start and end ON the axis, e.g.
+    [(0, 0), (20, 0), (16, 35), (0, 35)] is a tapered cup blank.
+    """
+    pts = np.asarray(profile_points, dtype=float)
+    return trimesh.creation.revolve(pts, sections=sections)
+
+
+def sweep(polygon, path_points):
+    """Sweep a 2D shapely cross-section along a 3D path — hooks, handles,
+    tubes, curved brackets. Round section: Point(0, 0).buffer(r, quad_segs=24)
+    (from shapely.geometry). Keep the path smooth and non-self-intersecting;
+    sample curves with ~20+ points.
+    """
+    return trimesh.creation.sweep_polygon(
+        polygon, np.asarray(path_points, dtype=float), cap=True)
 
 
 def move(mesh, x=0, y=0, z=0):
