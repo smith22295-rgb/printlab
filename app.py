@@ -506,6 +506,7 @@ async def open_target(body: dict):
     return {"ok": True}
 
 
+OUT.mkdir(exist_ok=True)  # gitignored, so fresh clones don't have it
 app.mount("/output", StaticFiles(directory=OUT), name="output")
 
 
