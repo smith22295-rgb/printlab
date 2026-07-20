@@ -146,7 +146,7 @@ def run_forge(job_id, request, part=None, image_path=None):
                                  image_line=image_line)
     cmd = [claude, "-p", prompt,
            "--output-format", "stream-json", "--verbose",
-           "--model", "opus", "--max-turns", "30",
+           "--model", "fable", "--effort", "high", "--max-turns", "30",
            "--allowedTools", "Read,Glob,Grep,Write,Edit,Bash"]
     try:
         proc = subprocess.Popen(
