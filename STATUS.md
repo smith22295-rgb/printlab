@@ -19,7 +19,8 @@ Source of truth for cross-PC handoff. Update this when state changes.
 ## Working parts (parts/)
 
 calibration_cube · car_lift_164 · dog_top_hat · hinge_demo · keychain_smith ·
-phone_stand · star_ornament
+phone_stand · star_ornament · table_lamp_shade (first Fable-forged part,
+2026-07-19)
 
 ## Handoff rules
 
