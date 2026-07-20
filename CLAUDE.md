@@ -12,7 +12,8 @@ spend; do NOT re-propose them. Organic AI sculpts are out of scope.
   `PRINTLAB_P` env-var override (instant free tweaks), bakes overrides into
   the script's P block, and forges new parts by spawning **Claude Code
   headless**: `claude -p <contract prompt> --output-format stream-json
-  --verbose --model opus --allowedTools Read,Glob,Grep,Write,Edit,Bash`.
+  --verbose --model fable --effort high --allowedTools
+  Read,Glob,Grep,Write,Edit,Bash`.
 - The claude binary is resolved from PATH, falling back to the desktop app's
   bundled CLI at `%APPDATA%\Claude\claude-code\<version>\claude.exe`.
   Headless runs need a ONE-TIME interactive `/login` (desktop-app auth is not
