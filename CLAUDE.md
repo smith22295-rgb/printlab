@@ -12,8 +12,11 @@ spend; do NOT re-propose them. Organic AI sculpts are out of scope.
   `PRINTLAB_P` env-var override (instant free tweaks), bakes overrides into
   the script's P block, and forges new parts by spawning **Claude Code
   headless**: `claude -p <contract prompt> --output-format stream-json
-  --verbose --model fable --effort high --allowedTools
-  Read,Glob,Grep,Write,Edit,Bash`.
+  --verbose --model opus --effort high --allowedTools
+  Read,Glob,Grep,Write,Edit,Bash`. Opus is the deliberate choice over Fable:
+  in a head-to-head bake-off both hit the spec, but Opus independently writes
+  trimesh code to MEASURE its own output (hole diameters, wall angles, window
+  width) while Fable never executed the build at all. See STATUS.md.
 - The claude binary is resolved from PATH, falling back to the desktop app's
   bundled CLI at `%APPDATA%\Claude\claude-code\<version>\claude.exe`.
   Headless runs need a ONE-TIME interactive `/login` (desktop-app auth is not
