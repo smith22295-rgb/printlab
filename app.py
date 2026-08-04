@@ -288,7 +288,14 @@ def run_part(part, overrides=None):
         creationflags=subprocess.CREATE_NO_WINDOW)
     out = (proc.stdout + proc.stderr).strip()
     ok = (proc.returncode == 0 and "watertight=True" in out
-          and "watertight=False" not in out)
+          and "watertight=False" not in out
+          # a tweak that grows the part past the plate is NOT a success —
+          # this used to report ok for a part 100x bigger than the printer
+          and "plate_fit=TOO BIG" not in out)
+    if not ok and "Traceback" in out:
+        out += ("\n\nThe part script failed to build. A dimension is usually "
+                "the cause — check for a value that is zero, negative, or "
+                "larger than the feature it sits in.")
     return ok, out
 
 

@@ -110,6 +110,44 @@ printability measurements (including the two traps above: cavity-is-not-a-
 hole, and disconnected-body detection). Run it plus `rebuild_all.py` after
 touching lib3d.py.
 
+## Stress testing (2026-07-26)
+
+Adversarial geometry and hostile API input, run against things the code was
+NOT designed for. Four real bugs found and fixed:
+
+- **Holes were only scanned along Z**, so a wall bracket's side-entry bolt
+  hole reported as no holes at all. Now scanned on X/Y/Z and labelled with
+  the axis.
+- **`rotate()` rejected named axes.** CLAUDE.md documents
+  `rotate(m, deg, axis)`, so `rotate(m, 90, "z")` is the natural thing to
+  write, and it died on `could not convert string to float`. Names and
+  vectors both work now.
+- **`printability()` crashed on an empty mesh**, which would have taken the
+  whole build down with an unrelated TypeError.
+- **A rebuild that outgrew the build plate reported success.** `run_part`
+  checked watertight but not `plate_fit`, so scaling a part to 99999 mm came
+  back `ok: true`. It now fails, and says why.
+
+Square slots/vents were being silently dropped by the roundness filter and
+are now counted as non-round voids.
+
+Security held up: every path-traversal, injection and overlong-name attempt
+returns 404, none 500, nothing escapes `parts/`.
+
+Three suites now, all green — run them after touching lib3d.py or app.py:
+
+    venv\Scripts\python.exe tools\test_lib3d.py     # 30 checks, no server
+    venv\Scripts\python.exe tools\rebuild_all.py    # all parts still build
+    venv\Scripts\python.exe tools\test_api.py       # needs PrintLab running
+
+`test_api.py` never calls `/api/generate` (that spends plan usage) and cleans
+up after itself.
+
+Measured limits, documented rather than left to be discovered: hole diameters
+are only accurate on axis-aligned holes (a tilted hole reads as an ellipse and
+overstates), anything wider than a quarter of the part counts as the part's
+own cavity, and the whole scan costs ~0.3 s on an 80k-face mesh.
+
 Not done: no printer calibration. `parts/calibration_cube.py` exists purely
 to be measured with calipers, but nothing consumes the measurement — a
 stored per-printer offset applied to holes and clearances is the obvious
