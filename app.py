@@ -101,6 +101,11 @@ Rules — follow exactly:
   sweep, image_outline, profile extrude...) — and look at 1-2 similar scripts
   in parts/ as worked examples instead of inventing geometry from scratch.
 - Conventions and helpers: read CLAUDE.md and lib3d.py in this repo if unsure.
+- If the part has to fit real hardware (screws, nuts, bearings, magnets,
+  batteries), get the dimension from lib3d.FIT / BEARING / COMMON via
+  lib3d.fit() — do NOT invent a number that looks about right. Use
+  bolt_hole() / hex_pocket() / pocket() rather than bare cylinders. If it
+  isn't in the tables, say so in the SUMMARY instead of guessing.
 - The script's tunable dimensions live in `P = lib3d.params({{...}})` at the
   top, every value a plain number or string literal with a short comment.
 - All booleans via lib3d.union/difference/intersection. Units are mm.

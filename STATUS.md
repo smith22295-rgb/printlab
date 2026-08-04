@@ -87,6 +87,34 @@ Still open: nothing shows the model a *picture*. Headless rendering needs
 pyglet plus a GL context, which is unreliable on Windows; the numeric report
 covers most of the value without that dependency.
 
+## Real-hardware fits (2026-07-26, done)
+
+The documented failure mode for LLM-generated 3D parts is inventing a
+plausible-but-wrong dimension — geometry that is sound and numbers that are
+made up. `M3 = 3.4 mm` used to live as prose in two files and nothing else
+was covered, so every M4/M5/bearing/magnet part was a guess.
+
+`lib3d` now carries the real numbers: `FIT` (M2–M8: clearance, tap, head,
+countersink, nut across-flats, nut thickness, heat-set boss), `BEARING`
+(bore/OD/width for 623–6801, 608, MR105), `COMMON` (batteries, credit card,
+USB-C, 2020 extrusion, zip ties), and diametral clearances `CLEAR_PRESS`
+0.05 / `CLEAR_SNUG` 0.20 / `CLEAR_SLIP` 0.40. Helpers: `fit()`,
+`bolt_hole()`, `hex_pocket()`, `pocket()`.
+
+`fit()` **raises on an unknown key rather than falling back to a guess** —
+that is the whole point, so don't add a default. CLAUDE.md, TECHNIQUES.md
+recipe 9, and the forge prompt all now say look it up, never estimate.
+
+`tools/test_lib3d.py` covers the fits, the helper geometry, and the
+printability measurements (including the two traps above: cavity-is-not-a-
+hole, and disconnected-body detection). Run it plus `rebuild_all.py` after
+touching lib3d.py.
+
+Not done: no printer calibration. `parts/calibration_cube.py` exists purely
+to be measured with calipers, but nothing consumes the measurement — a
+stored per-printer offset applied to holes and clearances is the obvious
+next step for parts that must physically fit.
+
 ## Working parts (parts/)
 
 calibration_cube · car_lift_164 · dog_top_hat · hinge_demo · keychain_smith ·

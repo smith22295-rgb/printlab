@@ -62,9 +62,24 @@ Everything visible gets `soften` (param, default 2); `style="chamfer"` for
 flat bevels. Functional faces (seams, snaps, threads) stay crisp.
 
 ## 9. Fits and mechanisms
-Print-in-place clearance 0.35–0.45 mm (PLA) / 0.4–0.5 (PETG). Snap cantilever:
-1.2 mm thick, 7–9 mm long, 1.0 mm undercut, chamfered tip. M3: hole 3.4 mm,
-countersink 6.5 × 2 mm. Pin hinge: pin 4 mm, bore 4.4 mm, add end caps.
+**Never invent a hardware dimension — look it up in `lib3d`.** A number that
+looks right but isn't is the most common way a generated part fails on the
+bench.
+```python
+lib3d.fit("M3")                     # 3.4 clearance hole
+lib3d.fit("M4", "heatset")          # 5.6 boss for a heat-set insert
+body = lib3d.difference(body, lib3d.move(lib3d.bolt_hole("M3", 20), x, y, -1))
+trap = lib3d.move(lib3d.hex_pocket(lib3d.fit("M3", "nut_af"), 3), x, y, 2)
+seat = lib3d.pocket(lib3d.BEARING["608"][1], 7)   # 22 mm OD, press fit
+```
+`FIT` M2–M8: clear · tap · head · csink · nut_af · nut_thick · heatset.
+`BEARING` (bore, OD, width). `COMMON`: batteries, credit card, USB-C, 2020
+extrusion, zip ties, LED tea light. `fit()` raises rather than guess.
+
+Clearances are diametral: `CLEAR_PRESS` 0.05 · `CLEAR_SNUG` 0.20 ·
+`CLEAR_SLIP` 0.40 (PLA; +0.05 PETG). Snap cantilever: 1.2 mm thick,
+7–9 mm long, 1.0 mm undercut, chamfered tip. Pin hinge: pin 4 mm, bore
+4.4 mm, add end caps.
 
 ## 10. Sanity dimensions
 Cased phone ~75×150×9 · credit card 86×54 · AA 14.5⌀×50.5 · 1:64 diecast car

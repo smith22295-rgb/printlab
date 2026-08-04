@@ -121,7 +121,20 @@ Primary uses, in the user's priority order:
   seam dovetails, threads, snap-fits, and the bed-contact face stay crisp.
   Keep r under half the thinnest feature or details vanish.
 - Default wall/floor thickness ≥ 2 mm; raised text ≥ 1.2 mm proud, ≥ 3 mm
-  cap height; holes for M3 screws = 3.4 mm dia, countersink 6.5 mm.
+  cap height.
+- **Never invent a dimension for real hardware — look it up.** Inventing a
+  plausible-but-wrong number is the most common way a generated part fails
+  in the real world. `lib3d.FIT` covers M2–M8 (clearance, tap, head,
+  countersink, nut across-flats, nut thickness, heat-set boss);
+  `lib3d.BEARING` covers 623/624/625/626/608/688/6800/6801/MR105 as
+  (bore, OD, width); `lib3d.COMMON` covers batteries, credit card, USB-C,
+  2020 extrusion, zip ties, LED tea light. Helpers: `fit(size, feature)`,
+  `bolt_hole(size, depth)`, `hex_pocket(af, depth)`, `pocket(dia, depth)`.
+  `fit()` raises on an unknown key rather than guessing — if something isn't
+  in the table, say so in the SUMMARY instead of making it up.
+- Fit clearances are diametral: `CLEAR_PRESS` 0.05 (bearing/magnet seat),
+  `CLEAR_SNUG` 0.20 (hand press, stays put), `CLEAR_SLIP` 0.40 (moves
+  freely / print-in-place; +0.05 for PETG).
 - Think about print orientation: flat face down, avoid unsupported overhangs
   > 50°; chamfer rather than fillet on the plate-side edges.
 - Sanity-check real-world fit (a phone is ~75 × 150 × 9 mm cased; a credit

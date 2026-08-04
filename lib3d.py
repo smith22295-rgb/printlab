@@ -515,3 +515,103 @@ def export_multi(bodies, name):
     combined.export(OUT / f"{name}.stl")
     print(f"  -> {OUT / name}.*.stl ({len(paths)} bodies + combined preview)")
     return paths
+
+
+# --------------------------------------------------------------- real fits
+# Measured/standard dimensions for hardware parts actually have to fit.
+# The common failure when generating 3D parts is inventing a plausible number
+# instead of using the real one, so LOOK IT UP here — never estimate.
+#
+# Screw values are ISO 273 medium clearance, DIN 912 socket-cap heads,
+# DIN 934 hex nuts, DIN 965 countersunk heads. Heat-set inserts are Ruthex /
+# CNC Kitchen standard and DO vary by brand — check yours if the fit matters.
+#
+#   clear     free-running clearance hole (bolt passes through)
+#   tap       self-tapping pilot hole into plastic
+#   head      socket-cap head diameter (counterbore this + CLEAR_PRESS)
+#   csink     countersunk (flat) head diameter at the surface
+#   nut_af    hex nut across the flats -> use nut_pocket()
+#   nut_thick hex nut thickness
+#   heatset   boss hole diameter for a heat-set threaded insert
+FIT = {
+    "M2":   dict(clear=2.4, tap=1.6, head=3.8, csink=4.4, nut_af=4.0,
+                 nut_thick=1.6, heatset=3.2),
+    "M2.5": dict(clear=2.9, tap=2.1, head=4.5, csink=5.3, nut_af=5.0,
+                 nut_thick=2.0, heatset=3.6),
+    "M3":   dict(clear=3.4, tap=2.5, head=5.5, csink=6.3, nut_af=5.5,
+                 nut_thick=2.4, heatset=4.0),
+    "M4":   dict(clear=4.5, tap=3.3, head=7.0, csink=8.2, nut_af=7.0,
+                 nut_thick=3.2, heatset=5.6),
+    "M5":   dict(clear=5.5, tap=4.2, head=8.5, csink=9.9, nut_af=8.0,
+                 nut_thick=4.0, heatset=6.4),
+    "M6":   dict(clear=6.6, tap=5.0, head=10.0, csink=11.7, nut_af=10.0,
+                 nut_thick=5.0, heatset=8.0),
+    "M8":   dict(clear=9.0, tap=6.8, head=13.0, csink=15.2, nut_af=13.0,
+                 nut_thick=6.5, heatset=10.0),
+}
+
+# Deep-groove ball bearings: (bore, outer diameter, width) in mm.
+BEARING = {
+    "623": (3, 10, 4),    "624": (4, 13, 5),   "625": (5, 16, 5),
+    "626": (6, 19, 6),    "608": (8, 22, 7),   "688": (8, 16, 5),
+    "6800": (10, 19, 5),  "6801": (12, 21, 5), "MR105": (5, 10, 4),
+}
+
+# Everyday objects, so a part is sized against reality rather than a guess.
+# (diameter, length) for cylinders; (x, y, z) for boxes.
+COMMON = {
+    "AA": (14.5, 50.5), "AAA": (10.5, 44.5), "C": (26.2, 50.0),
+    "18650": (18.6, 65.2), "CR2032": (20.0, 3.2), "CR2016": (20.0, 1.6),
+    "9V": (26.5, 17.5, 48.5),
+    "credit_card": (85.6, 54.0, 0.76),
+    "tea_light_led": (38.0, 19.0),
+    "usb_c_port": (9.0, 3.2),
+    "2020_extrusion": (20.0, 20.0),   # slot opening 6.0
+    "paracord_550": (4.0,),
+    "zip_tie_std": (4.8, 1.2), "zip_tie_small": (2.5, 1.0),
+}
+
+# Diametral clearance to ADD to a nominal size for the fit you want.
+CLEAR_PRESS = 0.05   # magnet/bearing seat that should not move
+CLEAR_SNUG = 0.20    # goes in by hand, stays put
+CLEAR_SLIP = 0.40    # free to move / print-in-place (PLA; +0.05 for PETG)
+
+
+def fit(size, feature="clear"):
+    """Look up a hardware dimension. Raises on anything unknown.
+
+    Deliberately loud: a wrong-but-plausible number is the failure mode this
+    table exists to prevent, so an unknown key must never fall back to a guess.
+    """
+    try:
+        spec = FIT[size]
+    except KeyError:
+        raise KeyError(f"unknown fastener {size!r}; known: {sorted(FIT)}") from None
+    try:
+        return spec[feature]
+    except KeyError:
+        raise KeyError(f"{size} has no {feature!r}; known: "
+                       f"{sorted(spec)}") from None
+
+
+def bolt_hole(size, depth, feature="clear", extra=0.0):
+    """Cylinder to difference() out for a fastener. Centred on the origin,
+    running +Z from z=0. Give `depth` a mm or two of overshoot so the cut
+    breaks cleanly through both faces."""
+    return cylinder((fit(size, feature) + extra) / 2.0, depth)
+
+
+def hex_pocket(across_flats, depth, clearance=CLEAR_SNUG):
+    """Hex prism for trapping a nut. across_flats is the nut's AF size —
+    use fit(size, 'nut_af'). Extruded +Z from z=0; vertices land on the X
+    axis, so the flat-to-flat span runs along Y."""
+    r = (across_flats + clearance) / 2.0 / math.cos(math.radians(30))
+    pts = [(r * math.cos(math.radians(a)), r * math.sin(math.radians(a)))
+           for a in range(0, 360, 60)]
+    return extrude(Polygon(pts), depth)
+
+
+def pocket(nominal_dia, depth, clearance=CLEAR_PRESS):
+    """Round seat for a magnet or bearing OD, sized with a real fit
+    clearance instead of the nominal diameter."""
+    return cylinder((nominal_dia + clearance) / 2.0, depth)
