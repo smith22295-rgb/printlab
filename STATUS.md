@@ -54,10 +54,38 @@ Caveat: n=1 per config on one part. The round-2 replicates (opus xhigh ×2)
 were cancelled part-way to stop burning plan usage, so `xhigh` on Opus is
 untested here.
 
-Open improvement this surfaced: PrintLab never shows the model its finished
-mesh. Opus builds its own measuring instrument to compensate; making that a
-built-in step (render/measure after each build, feed it back) would help any
-model and is the highest-value change to the forge loop.
+## Printability report (2026-07-26, done)
+
+Acting on the bake-off's main finding. `lib3d.printability()` now measures
+every build and `export()` prints it, so the engine gets shape feedback for
+free instead of reinventing probes each forge:
+
+- `bodies` — separate shells. Catches floating/disconnected geometry, which
+  the prompt forbade but nothing ever checked.
+- `bed_contact` cm² and `overhang%` (faces >50° off vertical, bed excluded).
+- round through-holes inventoried by diameter — the thing a spec usually
+  pins down ("three 4 mm drain holes").
+
+The forge prompt now treats these as an acceptance gate, not just
+`watertight=True`. `tools/rebuild_all.py` rebuilds all parts and fails on
+regressions — run it after touching lib3d.py. UI rebuilds set
+`PRINTLAB_FAST=1` to skip the slower scan and stay instant.
+
+Two traps found while building it, both worth remembering:
+- A hollow part's cavity is also a round interior ring, so the vase read as
+  "8 holes, 22–38 mm". Holes are now judged relative to part size (under a
+  quarter of the footprint). Verified both directions: a synthetic 3×4 mm
+  plate reports `3x 4.0mm`, accent_lamp reports none.
+- A sampled wall-thickness metric was tried and **removed** — it reported
+  0.35 mm on a solid 20 mm cube, measuring corner artifacts rather than
+  walls. A misleading number is worse than no number.
+- Multi-body parts legitimately have more shells than named bodies
+  (hinge_demo: 2 bodies, 3 shells — the rigid half is two leaves joined by
+  the flex strap), so only single-body exports get the warning.
+
+Still open: nothing shows the model a *picture*. Headless rendering needs
+pyglet plus a GL context, which is unreliable on Windows; the numeric report
+covers most of the value without that dependency.
 
 ## Working parts (parts/)
 
