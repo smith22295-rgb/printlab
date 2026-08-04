@@ -25,8 +25,7 @@ from shapely.geometry import Polygon
 import lib3d
 
 P = lib3d.params({
-    "car_length": 78,       # reference 1:64 car length (sizes the deck)
-    "deck_length": 95,      # flat drive deck, car length + room + stop
+    "deck_length": 95,      # flat drive deck; fits a ~78 mm 1:64 car + stop
     "lift_height": 50,      # height of the drive surface above the bed
     "ramp_length": 55,      # run of the drive-up ramp (shallower = easier)
     "runway_width": 14,     # width of each wheel runway
@@ -53,7 +52,10 @@ def runway():
     deck_bot = deck_top - P["deck_thickness"]
     deck_end = ramp + P["deck_length"]
     stop_h = P["wheel_stop"]
-    stop_w = 4.0
+    # soften() erases any feature thinner than 2*r, and the stop used to be a
+    # flat 4.0 mm — exactly 2*soften at the default r=2, so the wheel stop
+    # silently vanished from the printed part. Keep it wider than the pass.
+    stop_w = max(4.0, 2.5 * P["soften"])
 
     profile = Polygon([
         (0, 0),                                   # ramp toe on the bed

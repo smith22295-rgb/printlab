@@ -148,6 +148,33 @@ are only accurate on axis-aligned holes (a tilted hole reads as an ellipse and
 overstates), anything wider than a quarter of the part counts as the part's
 own cavity, and the whole scan costs ~0.3 s on an 80k-face mesh.
 
+## Dead-parameter check (2026-07-26)
+
+`tools/check_params.py` nudges every knob in every part's `P` block, rebuilds,
+and compares STL bytes (rebuilds are byte-deterministic, so any geometric
+change shows). A knob whose nudge leaves the mesh identical is a silent lie:
+the field is editable, Rebuild succeeds, nothing moves.
+
+It immediately found a **real functional bug in `car_lift_164`**: the wheel
+stop — the lip that keeps a car from rolling off the deck — did not exist in
+the printed part. `lib3d.soften()` erases any feature thinner than `2*r`, the
+stop was a flat 4.0 mm, and the default `soften` is 2. Exactly at the
+threshold, so it vanished, silently, in a part that was watertight and
+plate-fitting the whole time. `stop_w` is now `max(4.0, 2.5 * soften)`.
+Also removed `car_length`, which claimed to size the deck and was never read.
+
+Two classes are reported separately, because they need different fixes:
+- **DEAD** — the script never reads the key at all. Wire it up or delete it.
+- **ADVISORY** — read, but only for a printed fit check, so it moves no
+  geometry (`table_lamp_shade.puck_dia` / `puck_height`). Still misleading in
+  the UI; left as-is because sizing the chamber from the puck is a design
+  decision, not a bug fix.
+
+Watch out when extending it: `0`/`1` params are on/off flags read as
+`if P["x"]:`, so nudging 1 to 3 leaves them truthy and falsely reads as dead.
+The perturber flips them instead. That bug produced three false accusations
+on the first run.
+
 Not done: no printer calibration. `parts/calibration_cube.py` exists purely
 to be measured with calipers, but nothing consumes the measurement — a
 stored per-printer offset applied to holes and clearances is the obvious
