@@ -5,6 +5,7 @@ Booleans must go through union()/difference()/intersection() so the manifold
 engine guarantees watertight output.
 """
 import json
+import math
 import os
 from pathlib import Path
 
@@ -290,6 +291,103 @@ def _clear_bodies(name):
         old.unlink()
 
 
+# Faces steeper than this from vertical need support on an FDM printer.
+OVERHANG_LIMIT_DEG = 50.0
+
+
+def printability(mesh, deep=True):
+    """Measure the finished mesh the way a printer cares about.
+
+    The forge loop used to only prove the mesh was CLOSED, never that it was
+    the shape that was asked for — so the engine would write geometry, see
+    watertight=True, and stop. These are the spec-independent facts that
+    catch the rest: floating shells, surfaces that need support, a part that
+    barely touches the bed, and an inventory of the round through-holes so
+    hole counts and diameters can be checked without hand-written probes.
+    """
+    info = {}
+
+    # separate shells: "no floating geometry" was a rule nothing verified
+    try:
+        info["bodies"] = len(mesh.split(only_watertight=False))
+    except Exception:  # noqa: BLE001
+        info["bodies"] = None
+
+    nz = mesh.face_normals[:, 2]
+    areas = mesh.area_faces
+    zmin = mesh.bounds[0][2]
+
+    # bed contact: down-facing faces sitting on the plate
+    face_z = mesh.triangles[:, :, 2].max(axis=1)
+    on_bed = (nz < -0.99) & (face_z <= zmin + 0.05)
+    info["bed_contact_cm2"] = round(float(areas[on_bed].sum()) / 100, 1)
+
+    # overhangs: down-facing and more than OVERHANG_LIMIT_DEG off vertical,
+    # not counting the faces already resting on the plate
+    steep = (nz < -math.sin(math.radians(OVERHANG_LIMIT_DEG))) & ~on_bed
+    total = float(areas.sum())
+    info["overhang_pct"] = round(100.0 * float(areas[steep].sum()) / total, 1) if total else 0.0
+
+    if not deep:
+        return info
+
+    # Round through-holes, grouped by diameter (what a spec usually pins down).
+    # A hollow part's own cavity is also a round interior ring, so holes are
+    # judged relative to the part: anything wider than a quarter of the
+    # footprint is the cavity, not a drilled hole.
+    holes = {}
+    try:
+        zlo, zhi = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
+        span = zhi - zlo
+        max_dia = min(0.25 * float(max(mesh.extents[0], mesh.extents[1])), 25.0)
+        for f in np.linspace(0.02, 0.98, 28):
+            sec = mesh.section(plane_origin=[0, 0, zlo + span * f],
+                               plane_normal=[0, 0, 1])
+            if sec is None:
+                continue
+            planar, _ = sec.to_2D()
+            found = {}
+            for poly in planar.polygons_full:
+                for ring in poly.interiors:
+                    ring_poly = Polygon(ring)
+                    a = ring_poly.area
+                    if a <= 0.75:  # numerical speck
+                        continue
+                    dia = 2.0 * math.sqrt(a / math.pi)
+                    # circular? compare area against its own perimeter's circle
+                    circ = 4 * math.pi * a / (ring_poly.length ** 2)
+                    if circ > 0.80 and dia <= max_dia:
+                        key = round(dia, 1)
+                        found[key] = found.get(key, 0) + 1
+            for dia, n in found.items():
+                holes[dia] = max(holes.get(dia, 0), n)
+    except Exception:  # noqa: BLE001
+        holes = {}
+    info["holes"] = holes
+    return info
+
+
+def format_report(info, expect_bodies=1):
+    """expect_bodies=None: report the shell count without judging it.
+
+    A multi-material part can legitimately have more shells than named bodies
+    (hinge_demo's rigid half is two leaves held together by the flex strap),
+    so only single-body exports get the floating-geometry warning.
+    """
+    bits = [f"bodies={info.get('bodies')}"]
+    if (expect_bodies is not None and info.get("bodies")
+            and info["bodies"] != expect_bodies):
+        bits[-1] += " !!"
+    bits.append(f"bed_contact={info.get('bed_contact_cm2')} cm2")
+    bits.append(f"overhang={info.get('overhang_pct')}% >{OVERHANG_LIMIT_DEG:.0f}deg")
+    line = "  " + "  ".join(bits)
+    holes = info.get("holes") or {}
+    if holes:
+        inv = ", ".join(f"{n}x {d}mm" for d, n in sorted(holes.items()))
+        line += f"\n  round holes: {inv}"
+    return line
+
+
 def export(mesh, name):
     """Repair, validate, report, and write output/<name>.stl. Returns path."""
     mesh = _clean(mesh)
@@ -306,6 +404,10 @@ def export(mesh, name):
           f"dims={dims[0]:.1f} x {dims[1]:.1f} x {dims[2]:.1f} mm  "
           f"volume={mesh.volume / 1000:.1f} cm3  tris={len(mesh.faces)}  "
           f"plate_fit={fit}")
+    # PRINTLAB_FAST=1 during UI rebuilds: skip the slower shape measurements
+    # so dimension tweaks stay instant.
+    print(format_report(printability(mesh,
+                                     deep=os.environ.get("PRINTLAB_FAST") != "1")))
     print(f"  -> {path}")
     if not mesh.is_watertight:
         print("  !! NOT WATERTIGHT — fix the geometry before printing")
@@ -380,6 +482,9 @@ def export_multi(bodies, name):
                    and dims[2] <= PLATE[2]) else "TOO BIG (dual-nozzle X cap is 235.5)"
     print(f"[{name}] {len(cleaned)} bodies  "
           f"dims={dims[0]:.1f} x {dims[1]:.1f} x {dims[2]:.1f} mm  plate_fit={fit}")
+    print(format_report(
+        printability(combined, deep=os.environ.get("PRINTLAB_FAST") != "1"),
+        expect_bodies=None))
 
     keys = list(cleaned)
     for i, a in enumerate(keys):

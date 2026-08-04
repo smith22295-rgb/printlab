@@ -47,8 +47,13 @@ spend; do NOT re-propose them. Organic AI sculpts are out of scope.
   `sys.path.insert(0, str(Path(__file__).parents[1]))` then `import lib3d`.
 - ALL booleans through `lib3d.union/difference/intersection` (manifold engine,
   watertight by construction). Never `trimesh.boolean` with default engine.
-- Run with `venv\Scripts\python.exe parts\<stem>.py`. The run is NOT done
-  until the output says `watertight=True` and `plate_fit=OK`.
+- Run with `venv\Scripts\python.exe parts\<stem>.py`. Every run prints a
+  printability report (`lib3d.printability`): `bodies`, `bed_contact`,
+  `overhang%`, and an inventory of round through-holes by diameter. The run
+  is NOT done until `watertight=True`, `plate_fit=OK`, `bodies=1` (unless
+  deliberately multi-body), and the hole inventory matches what was asked
+  for. Watertight only proves the mesh is closed, not that it is the right
+  shape. UI rebuilds set `PRINTLAB_FAST=1` to skip the slower shape scan.
 - STLs go to `output/` (gitignored — regenerate, don't commit).
 
 ## lib3d quick reference

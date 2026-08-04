@@ -107,7 +107,17 @@ Rules — follow exactly:
 - The export name must equal the script filename stem:
   lib3d.export(build(), "<stem>").
 - Run it with: venv\\Scripts\\python.exe parts\\<stem>.py
-  Iterate until the output line says watertight=True and plate_fit=OK.
+  Under the dims line it prints a printability report: bodies, bed contact
+  area, overhang percentage, and an inventory of round through-holes.
+  Iterate until ALL of these hold:
+    * watertight=True and plate_fit=OK
+    * bodies=1, unless the part is deliberately multi-body (floating,
+      disconnected geometry is the most common silent failure)
+    * the round-hole inventory matches the count and diameters requested
+    * bed_contact is large enough that the part will actually stick
+    * overhang is modest, or you can justify it in the SUMMARY
+  watertight only proves the mesh is CLOSED, never that it is the shape that
+  was asked for — check the report against the request before you finish.
 - Touch nothing outside parts/ and output/.
 - Design for FDM printing: flat face down, >=2mm walls, no floating geometry.
 - No sharp corners: include a "soften" param (mm, 0 = off, default 2) and
@@ -264,6 +274,7 @@ def retarget_export(src, old, new):
 
 def run_part(part, overrides=None):
     env = clean_env()
+    env["PRINTLAB_FAST"] = "1"  # UI rebuilds skip the slower shape scan
     if overrides:
         env["PRINTLAB_P"] = json.dumps(overrides)
     proc = subprocess.run(
