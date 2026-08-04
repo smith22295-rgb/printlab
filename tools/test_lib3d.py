@@ -17,7 +17,14 @@ FAILED = []
 
 
 def check(label, got, want, tol=0.0):
-    ok = abs(got - want) <= tol if isinstance(want, (int, float)) else got == want
+    # must never raise on a mismatch — a crashing assertion hides the result
+    try:
+        if isinstance(want, (int, float)) and not isinstance(want, bool):
+            ok = isinstance(got, (int, float)) and abs(got - want) <= tol
+        else:
+            ok = got == want
+    except TypeError:
+        ok = False
     print(f"  {'ok  ' if ok else 'FAIL'} {label}: {got}" + ("" if ok else f" (want {want})"))
     if not ok:
         FAILED.append(label)
@@ -57,6 +64,26 @@ check("hex_pocket depth", round(float(hexp.extents[2]), 2), 3.0, 0.01)
 check("pocket for 608 OD", round(float(lib3d.pocket(22, 7).extents[0]), 2),
       22 + lib3d.CLEAR_PRESS, 0.05)
 
+print("\nrotate accepts named axes")
+# CLAUDE.md documents rotate(m, deg, axis); a named axis must work, not just
+# a vector, or the engine hits a bare float-conversion error
+spun = lib3d.rotate(lib3d.box(10, 20, 30), 90, "x")
+check("rotate('x') swaps Y and Z", round(float(spun.extents[1]), 1), 30.0, 0.01)
+check("rotate([1,0,0]) matches",
+      round(float(lib3d.rotate(lib3d.box(10, 20, 30), 90, [1, 0, 0]).extents[1]), 1),
+      30.0, 0.01)
+raises_value = []
+try:
+    lib3d.rotate(lib3d.box(1, 1, 1), 90, "w")
+except ValueError:
+    print("  ok   bad axis name raises ValueError")
+except Exception as exc:  # noqa: BLE001
+    print(f"  FAIL bad axis name raised {type(exc).__name__}")
+    FAILED.append("bad axis name")
+else:
+    print("  FAIL bad axis name did not raise")
+    FAILED.append("bad axis name")
+
 print("\nprintability")
 # a 60 mm disc, 6 mm thick, with three 4 mm through-holes
 plate = lib3d.difference(
@@ -65,13 +92,44 @@ plate = lib3d.difference(
       for x, y in [(10, 0), (-5, 8.7), (-5, -8.7)]])
 info = lib3d.printability(plate)
 check("single body", info["bodies"], 1)
-check("three 4mm holes found", info["holes"].get(4.0), 3)
+check("three 4mm holes found along Z", info["holes"].get((4.0, "Z")), 3)
 check("bed contact ~ disc area minus holes",
       info["bed_contact_cm2"], (3.1416 * 30 ** 2 - 3 * 3.1416 * 2 ** 2) / 100, 0.5)
+
+# holes do not only run along Z — a bracket's side-entry bolt hole is the
+# commonest feature there is, and a Z-only scan reported none
+cross = lib3d.difference(lib3d.box(40, 40, 30),
+                         lib3d.rotate(lib3d.cylinder(2.25, 80), 90, "y"),
+                         lib3d.move(lib3d.cylinder(1.7, 80), 12, 12, 0))
+xz = lib3d.printability(cross)["holes"]
+check("side hole found along X", xz.get((4.5, "X")), 1)
+check("vertical hole still found along Z", xz.get((3.4, "Z")), 1)
+
+# a countersink is two diameters on one axis
+csink = lib3d.difference(lib3d.cylinder(20, 10), lib3d.cylinder(1.7, 30),
+                         lib3d.move(lib3d.cylinder(3.15, 4), 0, 0, 3.5))
+ch = lib3d.printability(csink)["holes"]
+check("countersink reports pilot and counterbore",
+      sorted(d for d, _ in ch), [3.4, 6.3])
+
+# square slots are real features; they just aren't round
+vent = lib3d.printability(lib3d.difference(lib3d.cylinder(30, 6),
+                                           lib3d.box(6, 6, 20)))
+check("square vent is not called a round hole", vent["holes"], {})
+check("square vent counted as a non-round void", vent["other_voids"], 1)
 
 # a hollow vase must NOT report its own cavity as a hole
 vase = lib3d.difference(lib3d.cylinder(30, 50), lib3d.move(lib3d.cylinder(27, 48), 0, 0, 3))
 check("cavity is not counted as a hole", lib3d.printability(vase)["holes"], {})
+
+# degenerate input must return a result, not blow up the whole build
+import trimesh  # noqa: E402
+check("empty mesh returns empty report",
+      lib3d.printability(trimesh.Trimesh()).get("empty"), True)
+ripped = trimesh.creation.box((10, 10, 10))
+ripped.update_faces([i > 1 for i in range(len(ripped.faces))])
+check("non-watertight mesh still measures",
+      lib3d.printability(ripped)["bodies"], 1)
 
 # two separate lumps must be reported as floating geometry
 pair = lib3d.union(lib3d.move(lib3d.box(10, 10, 10), -20, 0, 0),

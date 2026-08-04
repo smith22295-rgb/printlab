@@ -49,11 +49,16 @@ spend; do NOT re-propose them. Organic AI sculpts are out of scope.
   watertight by construction). Never `trimesh.boolean` with default engine.
 - Run with `venv\Scripts\python.exe parts\<stem>.py`. Every run prints a
   printability report (`lib3d.printability`): `bodies`, `bed_contact`,
-  `overhang%`, and an inventory of round through-holes by diameter. The run
-  is NOT done until `watertight=True`, `plate_fit=OK`, `bodies=1` (unless
-  deliberately multi-body), and the hole inventory matches what was asked
-  for. Watertight only proves the mesh is closed, not that it is the right
-  shape. UI rebuilds set `PRINTLAB_FAST=1` to skip the slower shape scan.
+  `overhang%`, round through-holes as `Nx <dia>mm along <axis>` (scanned on
+  all three axes, so a side-entry bolt hole shows up as `along X`), and a
+  count of non-round voids (slots/vents). The run is NOT done until
+  `watertight=True`, `plate_fit=OK`, `bodies=1` (unless deliberately
+  multi-body), and the hole inventory matches what was asked for. Watertight
+  only proves the mesh is closed, not that it is the right shape.
+  Known limits: a hole is only measured accurately if it runs along X, Y or
+  Z — a tilted hole reads as an ellipse and its diameter is overstated; and
+  anything wider than a quarter of the part is treated as the part's own
+  cavity, not a hole. UI rebuilds set `PRINTLAB_FAST=1` to skip this scan.
 - STLs go to `output/` (gitignored — regenerate, don't commit).
 
 ## lib3d quick reference
@@ -61,7 +66,8 @@ spend; do NOT re-propose them. Organic AI sculpts are out of scope.
 - `text_polygons(text, size_mm)` — font outlines as shapely geometry, holes
   handled; rendered cap height ≈ 0.7 × size_mm
 - `rounded_rect(w, h, r)` — shapely; `extrude(poly, h)` — shapely → mesh (+Z)
-- `box(w,d,h)`, `cylinder(r,h)`, `move(m,x,y,z)`, `rotate(m,deg,axis)`
+- `box(w,d,h)`, `cylinder(r,h)`, `move(m,x,y,z)`, `rotate(m,deg,axis)` —
+  axis takes a name or a vector: `rotate(m, 90, "x")` == `rotate(m, 90, [1,0,0])`
 - Prefer building a 2D profile polygon and extruding over stacking booleans —
   fewer ops, always watertight (see parts/phone_stand.py).
 

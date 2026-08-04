@@ -265,7 +265,16 @@ def move(mesh, x=0, y=0, z=0):
     return m
 
 
+AXES = {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]}
+
+
 def rotate(mesh, degrees, axis):
+    """Rotate about an axis. Takes a vector ([0,0,1]) or a name ("z")."""
+    if isinstance(axis, str):
+        try:
+            axis = AXES[axis.lower()]
+        except KeyError:
+            raise ValueError(f"axis must be x/y/z or a vector, got {axis!r}") from None
     m = mesh.copy()
     m.apply_transform(trimesh.transformations.rotation_matrix(
         np.radians(degrees), axis))
@@ -306,6 +315,9 @@ def printability(mesh, deep=True):
     hole counts and diameters can be checked without hand-written probes.
     """
     info = {}
+    if mesh is None or len(mesh.faces) == 0 or mesh.bounds is None:
+        return {"bodies": 0, "bed_contact_cm2": 0.0, "overhang_pct": 0.0,
+                "holes": {}, "other_voids": 0, "empty": True}
 
     # separate shells: "no floating geometry" was a rule nothing verified
     try:
@@ -331,39 +343,56 @@ def printability(mesh, deep=True):
     if not deep:
         return info
 
-    # Round through-holes, grouped by diameter (what a spec usually pins down).
-    # A hollow part's own cavity is also a round interior ring, so holes are
-    # judged relative to the part: anything wider than a quarter of the
-    # footprint is the cavity, not a drilled hole.
-    holes = {}
-    try:
-        zlo, zhi = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
-        span = zhi - zlo
-        max_dia = min(0.25 * float(max(mesh.extents[0], mesh.extents[1])), 25.0)
-        for f in np.linspace(0.02, 0.98, 28):
-            sec = mesh.section(plane_origin=[0, 0, zlo + span * f],
-                               plane_normal=[0, 0, 1])
-            if sec is None:
+    # Through-holes, inventoried by diameter and by the axis they run along.
+    # Scanning only Z would miss the side-entry screw hole in a wall bracket,
+    # which is one of the commonest features there is. A hollow part's own
+    # cavity is also a round interior ring, so holes are judged relative to
+    # the part: anything wider than a quarter of the part is the cavity.
+    holes, other = {}, 0
+    max_dia = min(0.25 * float(max(mesh.extents)), 25.0)
+    for ax in range(3):
+        normal = [0, 0, 0]
+        normal[ax] = 1
+        lo, hi = float(mesh.bounds[0][ax]), float(mesh.bounds[1][ax])
+        span = hi - lo
+        if span <= 0:
+            continue
+        axis_found, axis_other = {}, 0
+        for f in np.linspace(0.02, 0.98, 20):
+            origin = [0, 0, 0]
+            origin[ax] = lo + span * f
+            try:
+                sec = mesh.section(plane_origin=origin, plane_normal=normal)
+                if sec is None:
+                    continue
+                planar, _ = sec.to_2D()
+                slice_found, slice_other = {}, 0
+                for poly in planar.polygons_full:
+                    for ring in poly.interiors:
+                        ring_poly = Polygon(ring)
+                        a = ring_poly.area
+                        if a <= 0.75:  # numerical speck
+                            continue
+                        dia = 2.0 * math.sqrt(a / math.pi)
+                        if dia > max_dia:
+                            continue  # the part's own cavity, not a hole
+                        # round? compare area against its own perimeter's circle
+                        if 4 * math.pi * a / (ring_poly.length ** 2) > 0.80:
+                            key = round(dia, 1)
+                            slice_found[key] = slice_found.get(key, 0) + 1
+                        else:
+                            slice_other += 1
+                for dia, n in slice_found.items():
+                    axis_found[dia] = max(axis_found.get(dia, 0), n)
+                axis_other = max(axis_other, slice_other)
+            except Exception:  # noqa: BLE001
                 continue
-            planar, _ = sec.to_2D()
-            found = {}
-            for poly in planar.polygons_full:
-                for ring in poly.interiors:
-                    ring_poly = Polygon(ring)
-                    a = ring_poly.area
-                    if a <= 0.75:  # numerical speck
-                        continue
-                    dia = 2.0 * math.sqrt(a / math.pi)
-                    # circular? compare area against its own perimeter's circle
-                    circ = 4 * math.pi * a / (ring_poly.length ** 2)
-                    if circ > 0.80 and dia <= max_dia:
-                        key = round(dia, 1)
-                        found[key] = found.get(key, 0) + 1
-            for dia, n in found.items():
-                holes[dia] = max(holes.get(dia, 0), n)
-    except Exception:  # noqa: BLE001
-        holes = {}
+        for dia, n in axis_found.items():
+            key = (dia, "XYZ"[ax])
+            holes[key] = max(holes.get(key, 0), n)
+        other = max(other, axis_other)
     info["holes"] = holes
+    info["other_voids"] = other  # square vents, slots — real, just not round
     return info
 
 
@@ -383,8 +412,11 @@ def format_report(info, expect_bodies=1):
     line = "  " + "  ".join(bits)
     holes = info.get("holes") or {}
     if holes:
-        inv = ", ".join(f"{n}x {d}mm" for d, n in sorted(holes.items()))
+        inv = ", ".join(f"{n}x {d}mm along {ax}"
+                        for (d, ax), n in sorted(holes.items()))
         line += f"\n  round holes: {inv}"
+    if info.get("other_voids"):
+        line += f"\n  non-round voids: {info['other_voids']} (slots/vents)"
     return line
 
 
